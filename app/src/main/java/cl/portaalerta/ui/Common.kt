@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -44,6 +45,7 @@ import cl.portaalerta.data.Client
 import cl.portaalerta.data.Contact
 import cl.portaalerta.data.Dates
 import cl.portaalerta.data.Followup
+import cl.portaalerta.data.FollowupOutcome
 import cl.portaalerta.data.FollowupStatus
 import cl.portaalerta.data.FollowupType
 import cl.portaalerta.data.Templates
@@ -60,6 +62,8 @@ fun AppRoot(vm: MainViewModel) {
                 is Screen.ClientDetail -> ClientDetailScreen(vm, screen.id)
                 is Screen.ClientEdit -> ClientEditScreen(vm, screen.id)
                 is Screen.FollowupEdit -> FollowupEditScreen(vm, screen)
+                Screen.Settings -> SettingsScreen(vm)
+                Screen.Import -> ImportScreen(vm)
             }
         }
     }
@@ -179,4 +183,25 @@ fun FollowupCard(
             }
         }
     }
+}
+
+/** Pregunta cómo resultó el contacto al marcar un recordatorio como hecho. */
+@Composable
+fun OutcomeDialog(target: Followup?, onPick: (FollowupOutcome) -> Unit, onDismiss: () -> Unit) {
+    if (target == null) return
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("¿Cómo resultó?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                FollowupOutcome.entries.forEach { o ->
+                    OutlinedButton(onClick = { onPick(o) }, modifier = Modifier.fillMaxWidth()) {
+                        Text("${o.label} · ${o.hint}")
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+    )
 }

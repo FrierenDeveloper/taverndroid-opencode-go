@@ -8,6 +8,8 @@ import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,6 +22,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.DateRange
@@ -28,9 +31,11 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -53,6 +58,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -66,6 +72,7 @@ import cl.portaalerta.data.AppSettings
 import cl.portaalerta.data.Contact
 import cl.portaalerta.data.DefaultTemplates
 import cl.portaalerta.data.Dates
+import cl.portaalerta.data.Followup
 import cl.portaalerta.data.FollowupType
 import cl.portaalerta.data.Templates
 import kotlinx.coroutines.launch
@@ -79,10 +86,19 @@ fun HomeScreen(vm: MainViewModel) {
         TabDef("Agenda", Icons.Default.DateRange),
         TabDef("Clientes", Icons.Default.Person),
         TabDef("Seguros", Icons.Default.Notifications),
-        TabDef("Ajustes", Icons.Default.Settings),
+        TabDef("Resumen", Icons.Default.Info),
     )
     Scaffold(
-        topBar = { TopAppBar(title = { Text(tabs[tab].label) }) },
+        topBar = {
+            TopAppBar(
+                title = { Text(tabs[tab].label) },
+                actions = {
+                    IconButton(onClick = { vm.push(Screen.Settings) }) {
+                        Icon(Icons.Default.Settings, contentDescription = "Ajustes")
+                    }
+                },
+            )
+        },
         bottomBar = {
             NavigationBar {
                 tabs.forEachIndexed { i, t ->
@@ -115,7 +131,7 @@ fun HomeScreen(vm: MainViewModel) {
             0 -> AgendaTab(vm, padding)
             1 -> ClientsTab(vm, padding)
             2 -> InsuranceTab(vm, padding)
-            else -> SettingsTab(vm, padding)
+            else -> SummaryTab(vm, padding)
         }
     }
 }
@@ -139,6 +155,34 @@ private fun LazyListScope.section(
 
 @Composable
 private fun AgendaTab(vm: MainViewModel, padding: PaddingValues) {
+    var mode by rememberSaveable { mutableIntStateOf(0) }
+    var doneTarget by remember { mutableStateOf<Followup?>(null) }
+    Column(Modifier.fillMaxSize().padding(padding)) {
+        Row(
+            Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            FilterChip(selected = mode == 0, onClick = { mode = 0 }, label = { Text("Lista") })
+            FilterChip(selected = mode == 1, onClick = { mode = 1 }, label = { Text("Calendario") })
+        }
+        if (mode == 0) {
+            AgendaList(vm) { doneTarget = it }
+        } else {
+            CalendarView(vm) { doneTarget = it }
+        }
+    }
+    OutcomeDialog(
+        target = doneTarget,
+        onPick = { outcome ->
+            doneTarget?.let { vm.markDone(it, outcome) }
+            doneTarget = null
+        },
+        onDismiss = { doneTarget = null },
+    )
+}
+
+@Composable
+private fun AgendaList(vm: MainViewModel, onDone: (Followup) -> Unit) {
     val all by vm.agenda.collectAsState()
     val settings = vm.settings
     val overdue = all.filter { Dates.daysUntil(it.followup.dueDate) < 0 }
@@ -149,14 +193,11 @@ private fun AgendaTab(vm: MainViewModel, padding: PaddingValues) {
     val upcoming = all.filter { Dates.daysUntil(it.followup.dueDate) > it.followup.leadDays }
 
     if (all.isEmpty()) {
-        EmptyState(
-            "No tienes recordatorios pendientes.\nCrea un cliente y agrega una portabilidad o un seguro.",
-            Modifier.padding(padding),
-        )
+        EmptyState("No tienes recordatorios pendientes.\nCrea un cliente y agrega una portabilidad o un seguro.")
         return
     }
     LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(padding),
+        modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -166,7 +207,7 @@ private fun AgendaTab(vm: MainViewModel, padding: PaddingValues) {
                 client = item.client,
                 settings = settings,
                 onClick = { vm.push(Screen.ClientDetail(item.client.id)) },
-                onDone = { vm.markDone(item.followup) },
+                onDone = { onDone(item.followup) },
             )
         }
         section("Atrasados", overdue, card)
@@ -199,6 +240,10 @@ private fun ClientsTab(vm: MainViewModel, padding: PaddingValues) {
             singleLine = true,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         )
+        TextButton(
+            onClick = { vm.push(Screen.Import) },
+            modifier = Modifier.padding(horizontal = 8.dp),
+        ) { Text("Importar desde los contactos del teléfono") }
         if (filtered.isEmpty()) {
             EmptyState(if (clients.isEmpty()) "Aún no tienes clientes guardados." else "Sin resultados.")
         } else {
@@ -228,6 +273,15 @@ private fun ClientsTab(vm: MainViewModel, padding: PaddingValues) {
 private fun InsuranceTab(vm: MainViewModel, padding: PaddingValues) {
     val all by vm.agenda.collectAsState()
     val list = all.filter { it.followup.type == FollowupType.INSURANCE }
+    var doneTarget by remember { mutableStateOf<Followup?>(null) }
+    OutcomeDialog(
+        target = doneTarget,
+        onPick = { outcome ->
+            doneTarget?.let { vm.markDone(it, outcome) }
+            doneTarget = null
+        },
+        onDismiss = { doneTarget = null },
+    )
     Column(Modifier.fillMaxSize().padding(padding)) {
         Text(
             "Cada seguro tiene su cuenta regresiva. Cuando se cumple el plazo (por defecto 1 mes) " +
@@ -249,12 +303,28 @@ private fun InsuranceTab(vm: MainViewModel, padding: PaddingValues) {
                         client = item.client,
                         settings = vm.settings,
                         onClick = { vm.push(Screen.ClientDetail(item.client.id)) },
-                        onDone = { vm.markDone(item.followup) },
+                        onDone = { doneTarget = item.followup },
                     )
                 }
             }
         }
     }
+}
+
+@Composable
+fun SettingsScreen(vm: MainViewModel) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Ajustes") },
+                navigationIcon = {
+                    IconButton(onClick = { vm.pop() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
+                    }
+                },
+            )
+        },
+    ) { padding -> SettingsTab(vm, padding) }
 }
 
 @Composable
@@ -273,6 +343,7 @@ private fun SettingsTab(vm: MainViewModel, padding: PaddingValues) {
     var insLead by remember { mutableIntStateOf(s.leadDays(FollowupType.INSURANCE)) }
     var tplPort by remember { mutableStateOf(s.template(FollowupType.PORTABILITY)) }
     var tplIns by remember { mutableStateOf(s.template(FollowupType.INSURANCE)) }
+    var goal by remember { mutableIntStateOf(s.monthlyGoal) }
     var saved by remember { mutableStateOf(false) }
 
     Column(
@@ -296,6 +367,7 @@ private fun SettingsTab(vm: MainViewModel, padding: PaddingValues) {
         Stepper("Portabilidad: avisar antes", portLead, 0..30, "días") { portLead = it }
         Stepper("Seguro: plazo", insMonths, 1..24, "meses") { insMonths = it }
         Stepper("Seguro: avisar antes", insLead, 0..30, "días") { insLead = it }
+        Stepper("Meta mensual de cierres", goal, 1..200, "cierres") { goal = it }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !Scheduler.canScheduleExact(ctx)) {
             Text(
@@ -341,6 +413,7 @@ private fun SettingsTab(vm: MainViewModel, padding: PaddingValues) {
                 s.storeName = store.trim()
                 s.countryCode = cc
                 s.notifyHour = hour
+                s.monthlyGoal = goal
                 s.setMonths(FollowupType.PORTABILITY, portMonths)
                 s.setLeadDays(FollowupType.PORTABILITY, portLead)
                 s.setMonths(FollowupType.INSURANCE, insMonths)

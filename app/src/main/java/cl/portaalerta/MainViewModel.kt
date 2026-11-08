@@ -9,6 +9,7 @@ import cl.portaalerta.data.AppSettings
 import cl.portaalerta.data.Client
 import cl.portaalerta.data.Dates
 import cl.portaalerta.data.Followup
+import cl.portaalerta.data.FollowupOutcome
 import cl.portaalerta.data.FollowupStatus
 import cl.portaalerta.data.FollowupType
 import kotlinx.coroutines.flow.Flow
@@ -17,11 +18,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 
 sealed interface Screen {
     data object Home : Screen
     data class ClientDetail(val id: Long) : Screen
     data class ClientEdit(val id: Long?) : Screen
+    data object Settings : Screen
+    data object Import : Screen
     data class FollowupEdit(val followupId: Long?, val clientId: Long?, val type: FollowupType) : Screen
 }
 
@@ -63,6 +67,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             fs.mapNotNull { f -> byId[f.clientId]?.let { AgendaItem(f, it) } }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    /** Todos los recordatorios (abiertos y hechos) con su cliente, para el calendario. */
+    val allItems: StateFlow<List<AgendaItem>> =
+        combine(dao.clients(), dao.followupsFlow()) { cs, fs ->
+            val byId = cs.associateBy { it.id }
+            fs.mapNotNull { f -> byId[f.clientId]?.let { AgendaItem(f, it) } }
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val allFollowups: StateFlow<List<Followup>> =
+        dao.followupsFlow().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
     fun clientFlow(id: Long): Flow<Client?> = dao.clientFlow(id)
     fun followupsFor(clientId: Long): Flow<List<Followup>> = dao.followupsFor(clientId)
     suspend fun getClient(id: Long): Client? = dao.client(id)
@@ -100,16 +114,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun markDone(f: Followup) {
+    fun markDone(f: Followup, outcome: FollowupOutcome) {
         viewModelScope.launch {
-            dao.updateFollowup(f.copy(status = FollowupStatus.DONE))
+            dao.updateFollowup(
+                f.copy(status = FollowupStatus.DONE, outcome = outcome, doneAt = System.currentTimeMillis()),
+            )
             Scheduler.cancel(ctx, f.id)
         }
     }
 
     fun reopen(f: Followup) {
         viewModelScope.launch {
-            val reopened = f.copy(status = FollowupStatus.OPEN)
+            val reopened = f.copy(status = FollowupStatus.OPEN, outcome = null, doneAt = null)
             dao.updateFollowup(reopened)
             Scheduler.schedule(ctx, reopened)
         }
@@ -119,6 +135,35 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             Scheduler.cancel(ctx, f.id)
             dao.deleteFollowup(f)
+        }
+    }
+
+    /** Crea un cliente por contacto y, si se pide, su recordatorio de portabilidad con los plazos de Ajustes. */
+    fun importContacts(
+        contacts: List<Pair<String, String>>,
+        createPortability: Boolean,
+        base: LocalDate,
+        onDone: (Int) -> Unit,
+    ) {
+        viewModelScope.launch {
+            val months = settings.months(FollowupType.PORTABILITY)
+            val lead = settings.leadDays(FollowupType.PORTABILITY)
+            for ((name, phone) in contacts) {
+                val clientId = dao.insertClient(Client(name = name, phone = phone))
+                if (createPortability) {
+                    val f = Followup(
+                        clientId = clientId,
+                        type = FollowupType.PORTABILITY,
+                        baseDate = base.toEpochDay(),
+                        months = months,
+                        dueDate = Dates.dueFor(base, months).toEpochDay(),
+                        leadDays = lead,
+                    )
+                    val id = dao.insertFollowup(f)
+                    Scheduler.schedule(ctx, f.copy(id = id))
+                }
+            }
+            onDone(contacts.size)
         }
     }
 
@@ -137,13 +182,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         cs.forEach { sb.appendLine(listOf(it.name, it.phone, it.currentCarrier, it.plan, it.notes).joinToString(",") { v -> esc(v) }) }
         sb.appendLine()
         sb.appendLine("RECORDATORIOS")
-        sb.appendLine("cliente,telefono,tipo,fecha_base,meses,vencimiento,aviso_dias_antes,estado,detalle")
+        sb.appendLine("cliente,telefono,tipo,fecha_base,meses,vencimiento,aviso_dias_antes,estado,resultado,detalle")
         dao.allFollowups().forEach { f ->
             val c = byId[f.clientId] ?: return@forEach
             sb.appendLine(
                 listOf(
                     c.name, c.phone, f.type.label, Dates.format(f.baseDate), f.months.toString(),
-                    Dates.format(f.dueDate), f.leadDays.toString(), f.status.name, f.detail,
+                    Dates.format(f.dueDate), f.leadDays.toString(), f.status.name, f.outcome?.label.orEmpty(), f.detail,
                 ).joinToString(",") { v -> esc(v) },
             )
         }

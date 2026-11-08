@@ -41,6 +41,11 @@ class AppSettings(context: Context) {
         get() = p.getInt("hour", 9)
         set(v) = p.edit().putInt("hour", v.coerceIn(0, 23)).apply()
 
+    /** Meta de cierres (portabilidades + seguros) por mes, para el resumen. */
+    var monthlyGoal: Int
+        get() = p.getInt("goal", 15)
+        set(v) = p.edit().putInt("goal", v.coerceIn(1, 500)).apply()
+
     fun leadDays(type: FollowupType): Int = p.getInt("lead_${type.name}", type.defaultLeadDays)
     fun setLeadDays(type: FollowupType, days: Int) =
         p.edit().putInt("lead_${type.name}", days.coerceIn(0, 60)).apply()

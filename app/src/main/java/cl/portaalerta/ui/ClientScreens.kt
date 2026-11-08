@@ -145,6 +145,7 @@ fun ClientDetailScreen(vm: MainViewModel, id: Long) {
     val followups by remember(id) { vm.followupsFor(id) }.collectAsState(initial = emptyList())
     var confirmDelete by remember { mutableStateOf(false) }
     var followupToDelete by remember { mutableStateOf<Followup?>(null) }
+    var doneTarget by remember { mutableStateOf<Followup?>(null) }
 
     val c = client
     Scaffold(
@@ -234,7 +235,7 @@ fun ClientDetailScreen(vm: MainViewModel, id: Long) {
                     client = c,
                     settings = vm.settings,
                     showClientName = false,
-                    onDone = { vm.markDone(f) },
+                    onDone = { doneTarget = f },
                     extraActions = {
                         if (f.status == FollowupStatus.DONE) {
                             TextButton(onClick = { vm.reopen(f) }) { Text("Reabrir") }
@@ -251,6 +252,14 @@ fun ClientDetailScreen(vm: MainViewModel, id: Long) {
         }
     }
 
+    OutcomeDialog(
+        target = doneTarget,
+        onPick = { outcome ->
+            doneTarget?.let { vm.markDone(it, outcome) }
+            doneTarget = null
+        },
+        onDismiss = { doneTarget = null },
+    )
     if (confirmDelete && c != null) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },

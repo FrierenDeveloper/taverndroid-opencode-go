@@ -13,6 +13,8 @@ import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Update
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
 
 /** Tipos de recordatorio. Los plazos por defecto se pueden cambiar al crear cada uno. */
@@ -22,6 +24,13 @@ enum class FollowupType(val label: String, val defaultMonths: Int, val defaultLe
 }
 
 enum class FollowupStatus { OPEN, DONE }
+
+/** Resultado al marcar un recordatorio como hecho; alimenta el resumen del mes. */
+enum class FollowupOutcome(val label: String, val hint: String) {
+    CLOSED("Cerrado", "Se portó o contrató"),
+    REJECTED("No le interesó", "Lo descartó"),
+    NO_ANSWER("Sin respuesta", "No contestó"),
+}
 
 @Entity(tableName = "clients")
 data class Client(
@@ -61,6 +70,9 @@ data class Followup(
     val leadDays: Int,
     val detail: String = "",
     val status: FollowupStatus = FollowupStatus.OPEN,
+    val outcome: FollowupOutcome? = null,
+    /** Momento (epoch millis) en que se marcó como hecho. */
+    val doneAt: Long? = null,
 )
 
 @Dao
@@ -99,6 +111,9 @@ interface AppDao {
     suspend fun openFollowupsNow(): List<Followup>
 
     @Query("SELECT * FROM followups ORDER BY dueDate")
+    fun followupsFlow(): Flow<List<Followup>>
+
+    @Query("SELECT * FROM followups ORDER BY dueDate")
     suspend fun allFollowups(): List<Followup>
 
     @Query("SELECT * FROM followups WHERE id = :id")
@@ -114,11 +129,18 @@ interface AppDao {
     suspend fun deleteFollowup(f: Followup)
 }
 
-@Database(entities = [Client::class, Followup::class], version = 1, exportSchema = false)
+@Database(entities = [Client::class, Followup::class], version = 2, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): AppDao
 
     companion object {
+        private val MIGRATION_1_2 = object : Migration(1, 2) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE followups ADD COLUMN outcome TEXT")
+                db.execSQL("ALTER TABLE followups ADD COLUMN doneAt INTEGER")
+            }
+        }
+
         @Volatile
         private var instance: AppDatabase? = null
 
@@ -128,7 +150,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "portaalerta.db",
-                ).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2).build().also { instance = it }
             }
     }
 }
