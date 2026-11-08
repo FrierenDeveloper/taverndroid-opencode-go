@@ -165,7 +165,7 @@ private fun FollowupForm(vm: MainViewModel, initial: Followup?, clientId: Long?,
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("Vence: ${Dates.format(due)}", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        if (lead > 0) "Alarma de aviso: ${Dates.format(alertDay)} a las ${String.format("%02d:00", settings.notifyHour)}"
+                        if (lead > 0) "Alarma de aviso: ${Dates.format(alertDay)} a las ${"%02d:00".format(java.util.Locale.ROOT, settings.notifyHour)}"
                         else "Alarma el día del vencimiento",
                     )
                     if (lead > 0) Text("Y otra el día ${Dates.format(due)}")

@@ -1,6 +1,7 @@
 package cl.portaalerta
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -129,6 +130,7 @@ object Notifier {
             PackageManager.PERMISSION_GRANTED
 
     /** Resumen diario: cuántos recordatorios siguen abiertos después de su fecha. */
+    @SuppressLint("MissingPermission") // canNotify() comprueba POST_NOTIFICATIONS
     suspend fun notifyDigest(ctx: Context) {
         val today = LocalDate.now().toEpochDay()
         val overdue = AppDatabase.get(ctx).dao().openFollowupsNow().count { it.dueDate < today }
@@ -151,6 +153,7 @@ object Notifier {
         NotificationManagerCompat.from(ctx).notify(0, notification)
     }
 
+    @SuppressLint("MissingPermission") // canNotify() comprueba POST_NOTIFICATIONS
     suspend fun notifyFollowup(ctx: Context, followupId: Long) {
         val dao = AppDatabase.get(ctx).dao()
         val f = dao.followup(followupId) ?: return
