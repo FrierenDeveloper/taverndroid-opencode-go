@@ -12,7 +12,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -43,6 +45,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -76,12 +79,17 @@ import cl.portaalerta.data.Followup
 import cl.portaalerta.data.FollowupType
 import cl.portaalerta.data.Templates
 import kotlinx.coroutines.launch
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 private data class TabDef(val label: String, val icon: ImageVector)
 
 @Composable
 fun HomeScreen(vm: MainViewModel) {
     var tab by vm::homeTab
+    val agenda by vm.agenda.collectAsState()
+    val clients by vm.clients.collectAsState()
     val tabs = listOf(
         TabDef("Agenda", Icons.Default.DateRange),
         TabDef("Clientes", Icons.Default.Person),
@@ -90,14 +98,30 @@ fun HomeScreen(vm: MainViewModel) {
     )
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(tabs[tab].label) },
+            HomeHeader(
+                title = tabs[tab].label,
+                subtitle = when (tab) {
+                    0 -> LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE d 'de' MMMM", Locale("es", "CL")))
+                        .replaceFirstChar { it.uppercase() }
+                    1 -> if (clients.size == 1) "1 cliente" else "${clients.size} clientes"
+                    2 -> "Cuenta regresiva de seguros"
+                    else -> "Tu mes en números"
+                },
                 actions = {
                     IconButton(onClick = { vm.push(Screen.Settings) }) {
                         Icon(Icons.Default.Settings, contentDescription = "Ajustes")
                     }
                 },
-            )
+            ) {
+                if (tab == 0) {
+                    val overdue = agenda.count { Dates.daysUntil(it.followup.dueDate) < 0 }
+                    val now = agenda.count {
+                        val d = Dates.daysUntil(it.followup.dueDate)
+                        d >= 0 && d <= it.followup.leadDays
+                    }
+                    HeaderStats(overdue, now, agenda.size - overdue - now)
+                }
+            }
         },
         bottomBar = {
             NavigationBar {
@@ -107,6 +131,11 @@ fun HomeScreen(vm: MainViewModel) {
                         onClick = { tab = i },
                         icon = { Icon(t.icon, contentDescription = null) },
                         label = { Text(t.label) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                        ),
                     )
                 }
             }
@@ -117,11 +146,15 @@ fun HomeScreen(vm: MainViewModel) {
                     onClick = { vm.push(Screen.ClientEdit(null)) },
                     icon = { Icon(Icons.Default.Add, contentDescription = null) },
                     text = { Text("Nuevo cliente") },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
                 )
                 2 -> ExtendedFloatingActionButton(
                     onClick = { vm.push(Screen.FollowupEdit(null, null, FollowupType.INSURANCE)) },
                     icon = { Icon(Icons.Default.Add, contentDescription = null) },
                     text = { Text("Nuevo seguro") },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
                 )
                 else -> {}
             }
@@ -316,6 +349,7 @@ fun SettingsScreen(vm: MainViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
+                colors = appBarColors(),
                 title = { Text("Ajustes") },
                 navigationIcon = {
                     IconButton(onClick = { vm.pop() }) {
@@ -347,7 +381,7 @@ private fun SettingsTab(vm: MainViewModel, padding: PaddingValues) {
     var saved by remember { mutableStateOf(false) }
 
     Column(
-        Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
+        Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text("Tus datos (se usan en los mensajes)", style = MaterialTheme.typography.titleSmall)
