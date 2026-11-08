@@ -23,6 +23,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Notifier.ensureChannel(this)
+        Scheduler.scheduleDigest(this)
         if (savedInstanceState == null) handleIntent(intent)
         setContent {
             PortaTheme {

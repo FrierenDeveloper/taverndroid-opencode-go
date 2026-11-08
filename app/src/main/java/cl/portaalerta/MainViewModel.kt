@@ -1,7 +1,12 @@
 package cl.portaalerta
 
 import android.app.Application
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import cl.portaalerta.data.AppDatabase
@@ -35,6 +40,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val ctx: Application = app
     private val dao = AppDatabase.get(app).dao()
     val settings = AppSettings(app)
+
+    // ---- estado de la pantalla principal (sobrevive a abrir una ficha y volver) ----
+    var homeTab by mutableIntStateOf(0)
+    var agendaMode by mutableIntStateOf(0)
+    var calendarOffset by mutableIntStateOf(0)
+    var calendarSelected by mutableLongStateOf(LocalDate.now().toEpochDay())
+    var summaryOffset by mutableIntStateOf(0)
+    var clientQuery by mutableStateOf("")
 
     // ---- navegación mínima (pila de pantallas) ----
     val stack = mutableStateListOf<Screen>(Screen.Home)

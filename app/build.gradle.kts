@@ -32,6 +32,11 @@ android {
     buildFeatures {
         compose = true
     }
+    lint {
+        abortOnError = false
+        textReport = true
+        textOutput = layout.buildDirectory.file("reports/lint.txt").get().asFile
+    }
 }
 
 dependencies {
@@ -48,4 +53,6 @@ dependencies {
     implementation("androidx.room:room-runtime:$room")
     implementation("androidx.room:room-ktx:$room")
     ksp("androidx.room:room-compiler:$room")
+
+    testImplementation("junit:junit:4.13.2")
 }

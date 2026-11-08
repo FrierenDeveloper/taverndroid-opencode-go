@@ -98,7 +98,7 @@ interface AppDao {
     @Delete
     suspend fun deleteClient(c: Client)
 
-    @Query("SELECT * FROM followups WHERE clientId = :clientId ORDER BY status, dueDate")
+    @Query("SELECT * FROM followups WHERE clientId = :clientId ORDER BY CASE status WHEN 'OPEN' THEN 0 ELSE 1 END, dueDate")
     fun followupsFor(clientId: Long): Flow<List<Followup>>
 
     @Query("SELECT * FROM followups WHERE clientId = :clientId")

@@ -70,8 +70,8 @@ fun CalendarView(vm: MainViewModel, onDone: (Followup) -> Unit) {
     val items by vm.allItems.collectAsState()
     val cs = MaterialTheme.colorScheme
     val today = remember { LocalDate.now() }
-    var monthOffset by rememberSaveable { mutableIntStateOf(0) }
-    var selected by rememberSaveable { mutableLongStateOf(today.toEpochDay()) }
+    var monthOffset by vm::calendarOffset
+    var selected by vm::calendarSelected
 
     val ym = YearMonth.from(today).plusMonths(monthOffset.toLong())
     val byDay = remember(items) { items.groupBy { it.followup.dueDate } }

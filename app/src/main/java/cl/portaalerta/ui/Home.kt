@@ -81,7 +81,7 @@ private data class TabDef(val label: String, val icon: ImageVector)
 
 @Composable
 fun HomeScreen(vm: MainViewModel) {
-    var tab by rememberSaveable { mutableIntStateOf(0) }
+    var tab by vm::homeTab
     val tabs = listOf(
         TabDef("Agenda", Icons.Default.DateRange),
         TabDef("Clientes", Icons.Default.Person),
@@ -155,7 +155,7 @@ private fun LazyListScope.section(
 
 @Composable
 private fun AgendaTab(vm: MainViewModel, padding: PaddingValues) {
-    var mode by rememberSaveable { mutableIntStateOf(0) }
+    var mode by vm::agendaMode
     var doneTarget by remember { mutableStateOf<Followup?>(null) }
     Column(Modifier.fillMaxSize().padding(padding)) {
         Row(
@@ -220,7 +220,7 @@ private fun AgendaList(vm: MainViewModel, onDone: (Followup) -> Unit) {
 private fun ClientsTab(vm: MainViewModel, padding: PaddingValues) {
     val clients by vm.clients.collectAsState()
     val ctx = LocalContext.current
-    var query by rememberSaveable { mutableStateOf("") }
+    var query by vm::clientQuery
     val filtered = remember(clients, query) {
         val q = query.trim().lowercase()
         if (q.isEmpty()) {

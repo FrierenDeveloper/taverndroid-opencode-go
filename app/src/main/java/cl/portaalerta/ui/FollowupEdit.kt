@@ -177,8 +177,11 @@ private fun FollowupForm(vm: MainViewModel, initial: Followup?, clientId: Long?,
                 onClick = {
                     val cid = selectedClient
                     if (cid != null) {
-                        val f = Followup(
-                            id = initial?.id ?: 0L,
+                        val blank = Followup(
+                            clientId = cid, type = type, baseDate = 0, months = 0, dueDate = 0, leadDays = 0,
+                        )
+                        // copy() conserva estado, resultado y fecha de cierre del recordatorio editado.
+                        val f = (initial ?: blank).copy(
                             clientId = cid,
                             type = type,
                             baseDate = base.toEpochDay(),
@@ -186,7 +189,6 @@ private fun FollowupForm(vm: MainViewModel, initial: Followup?, clientId: Long?,
                             dueDate = due.toEpochDay(),
                             leadDays = lead,
                             detail = detail.trim(),
-                            status = initial?.status ?: FollowupStatus.OPEN,
                         )
                         vm.saveFollowup(f) { vm.pop() }
                     }

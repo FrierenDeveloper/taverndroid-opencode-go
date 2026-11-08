@@ -89,7 +89,7 @@ private fun computeStats(all: List<Followup>, ym: YearMonth): MonthStats {
 @Composable
 fun SummaryTab(vm: MainViewModel, padding: PaddingValues) {
     val all by vm.allFollowups.collectAsState()
-    var offset by rememberSaveable { mutableIntStateOf(0) }
+    var offset by vm::summaryOffset
     val ym = YearMonth.now().plusMonths(offset.toLong())
     val stats = remember(all, ym) { computeStats(all, ym) }
     val goal = vm.settings.monthlyGoal

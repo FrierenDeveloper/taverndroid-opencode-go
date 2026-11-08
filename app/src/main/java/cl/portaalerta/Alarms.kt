@@ -24,10 +24,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.ZoneId
 
 const val EXTRA_FOLLOWUP_ID = "followup_id"
 const val EXTRA_CLIENT_ID = "client_id"
+const val EXTRA_DIGEST = "digest"
 
 /** Programa dos alarmas por recordatorio: "aviso previo" (leadDays antes) y "día del vencimiento". */
 object Scheduler {
@@ -66,6 +68,7 @@ object Scheduler {
 
     suspend fun rescheduleAll(ctx: Context) {
         AppDatabase.get(ctx).dao().openFollowupsNow().forEach { schedule(ctx, it) }
+        scheduleDigest(ctx)
     }
 
     fun canScheduleExact(ctx: Context): Boolean =
@@ -76,8 +79,12 @@ object Scheduler {
 
     private fun setAt(ctx: Context, followupId: Long, kind: Int, atMillis: Long) {
         if (atMillis <= System.currentTimeMillis()) return
-        val am = alarmManager(ctx)
         val pi = pendingIntent(ctx, followupId, kind, create = true) ?: return
+        arm(ctx, pi, atMillis)
+    }
+
+    private fun arm(ctx: Context, pi: PendingIntent, atMillis: Long) {
+        val am = alarmManager(ctx)
         try {
             if (canScheduleExact(ctx)) {
                 am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atMillis, pi)
@@ -88,6 +95,20 @@ object Scheduler {
             am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, atMillis, pi)
         }
     }
+
+    /** Aviso diario (30 min después de la hora de alarma) si quedan recordatorios atrasados sin actualizar. */
+    fun scheduleDigest(ctx: Context) {
+        val hour = AppSettings(ctx).notifyHour
+        var at = LocalDate.now().atTime(hour, 30)
+        if (!at.isAfter(LocalDateTime.now())) at = at.plusDays(1)
+        val intent = Intent(ctx, AlarmReceiver::class.java).putExtra(EXTRA_DIGEST, true)
+        val pi = PendingIntent.getBroadcast(
+            ctx, DIGEST_CODE, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        arm(ctx, pi, at.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli())
+    }
+
+    private const val DIGEST_CODE = Int.MAX_VALUE - 1
 }
 
 object Notifier {
@@ -102,17 +123,40 @@ object Notifier {
         }
     }
 
+    private fun canNotify(ctx: Context): Boolean =
+        Build.VERSION.SDK_INT < 33 ||
+            ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+
+    /** Resumen diario: cuántos recordatorios siguen abiertos después de su fecha. */
+    suspend fun notifyDigest(ctx: Context) {
+        val today = LocalDate.now().toEpochDay()
+        val overdue = AppDatabase.get(ctx).dao().openFollowupsNow().count { it.dueDate < today }
+        if (overdue == 0 || !canNotify(ctx)) return
+        ensureChannel(ctx)
+        val open = PendingIntent.getActivity(
+            ctx, 0, Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val title = if (overdue == 1) "Tienes 1 recordatorio atrasado" else "Tienes $overdue recordatorios atrasados"
+        val notification = NotificationCompat.Builder(ctx, CHANNEL)
+            .setSmallIcon(R.drawable.ic_bell)
+            .setContentTitle(title)
+            .setContentText("Márcalos como hechos o cambia la fecha para dejar el estado al día.")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setAutoCancel(true)
+            .setContentIntent(open)
+            .build()
+        NotificationManagerCompat.from(ctx).notify(0, notification)
+    }
+
     suspend fun notifyFollowup(ctx: Context, followupId: Long) {
         val dao = AppDatabase.get(ctx).dao()
         val f = dao.followup(followupId) ?: return
         if (f.status != FollowupStatus.OPEN) return
         val client = dao.client(f.clientId) ?: return
-        if (Build.VERSION.SDK_INT >= 33 &&
-            ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS) !=
-            PackageManager.PERMISSION_GRANTED
-        ) {
-            return
-        }
+        if (!canNotify(ctx)) return
         ensureChannel(ctx)
 
         val settings = AppSettings(ctx)
@@ -160,12 +204,18 @@ object Notifier {
 class AlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val id = intent.getLongExtra(EXTRA_FOLLOWUP_ID, -1L)
-        if (id < 0) return
+        val digest = intent.getBooleanExtra(EXTRA_DIGEST, false)
+        if (id < 0 && !digest) return
         val pending = goAsync()
         val app = context.applicationContext
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                Notifier.notifyFollowup(app, id)
+                if (digest) {
+                    Notifier.notifyDigest(app)
+                    Scheduler.scheduleDigest(app)
+                } else {
+                    Notifier.notifyFollowup(app, id)
+                }
             } finally {
                 pending.finish()
             }

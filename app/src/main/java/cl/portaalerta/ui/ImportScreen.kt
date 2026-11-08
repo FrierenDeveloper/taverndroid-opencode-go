@@ -93,6 +93,7 @@ fun ImportScreen(vm: MainViewModel) {
     var createReminder by remember { mutableStateOf(true) }
     var base by remember { mutableStateOf(LocalDate.now()) }
     var showPicker by remember { mutableStateOf(false) }
+    var importing by remember { mutableStateOf(false) }
 
     val visible = remember(contacts, query) {
         val q = query.trim().lowercase()
@@ -132,8 +133,9 @@ fun ImportScreen(vm: MainViewModel) {
                         )
                     }
                     Button(
-                        enabled = selected.isNotEmpty(),
+                        enabled = selected.isNotEmpty() && !importing,
                         onClick = {
+                            importing = true
                             val chosen = contacts.filter { it.key in selected }.map { it.name to it.phone }
                             vm.importContacts(chosen, createReminder, base) { n ->
                                 Toast.makeText(ctx, "Se importaron $n contactos", Toast.LENGTH_SHORT).show()
