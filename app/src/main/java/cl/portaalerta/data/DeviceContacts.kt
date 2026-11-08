@@ -1,7 +1,7 @@
 package cl.portaalerta.data
 
 import android.content.Context
-import android.provider.ContactsContract
+import android.provider.ContactsContract.CommonDataKinds.Phone
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -11,16 +11,15 @@ data class DeviceContact(val name: String, val phone: String, val key: String)
 object DeviceContacts {
     suspend fun load(ctx: Context, countryCode: String): List<DeviceContact> = withContext(Dispatchers.IO) {
         val out = LinkedHashMap<String, DeviceContact>()
-        val phone = ContactsContract.CommonDataKinds.Phone
         ctx.contentResolver.query(
-            phone.CONTENT_URI,
-            arrayOf(phone.DISPLAY_NAME, phone.NUMBER),
+            Phone.CONTENT_URI,
+            arrayOf(Phone.DISPLAY_NAME, Phone.NUMBER),
             null,
             null,
-            "${phone.DISPLAY_NAME} COLLATE NOCASE ASC",
+            "${Phone.DISPLAY_NAME} COLLATE NOCASE ASC",
         )?.use { c ->
-            val nameIdx = c.getColumnIndexOrThrow(phone.DISPLAY_NAME)
-            val numIdx = c.getColumnIndexOrThrow(phone.NUMBER)
+            val nameIdx = c.getColumnIndexOrThrow(Phone.DISPLAY_NAME)
+            val numIdx = c.getColumnIndexOrThrow(Phone.NUMBER)
             while (c.moveToNext()) {
                 val number = c.getString(numIdx).orEmpty().trim()
                 val key = Contact.waNumber(number, countryCode)
