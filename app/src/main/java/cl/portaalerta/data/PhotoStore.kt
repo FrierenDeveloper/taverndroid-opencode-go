@@ -20,13 +20,15 @@ object PhotoStore {
     fun newTempFile(ctx: Context): File = File(tmpDir(ctx), "tmp_${System.nanoTime()}.jpg")
 
     /** Copia una imagen elegida de la galería a la carpeta privada. La original no se toca. */
-    fun copyToTemp(ctx: Context, uri: Uri): File? = try {
-        val out = newTempFile(ctx)
-        ctx.contentResolver.openInputStream(uri)?.use { input -> out.outputStream().use { input.copyTo(it) } }
-            ?: return null
-        out
-    } catch (e: Exception) {
-        null
+    fun copyToTemp(ctx: Context, uri: Uri): File? {
+        return try {
+            val out = newTempFile(ctx)
+            val input = ctx.contentResolver.openInputStream(uri) ?: return null
+            input.use { src -> out.outputStream().use { dst -> src.copyTo(dst) } }
+            out
+        } catch (e: Exception) {
+            null
+        }
     }
 
     /** Mueve una foto temporal a su lugar definitivo y devuelve la ruta nueva. */
