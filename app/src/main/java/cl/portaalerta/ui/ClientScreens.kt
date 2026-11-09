@@ -232,23 +232,29 @@ fun ClientDetailScreen(vm: MainViewModel, id: Long) {
                     }
                 }
             }
-            if (scans.isNotEmpty()) {
-                item {
-                    Card(Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Chips y fotos (${scans.size})", style = MaterialTheme.typography.titleMedium)
-                            scans.forEach { s ->
-                                Row(
-                                    Modifier.fillMaxWidth().clickable { vm.push(Screen.ChipResult(s.id, null, s.iccid)) },
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                ) {
-                                    PhotoThumb(s.photoPath, 48.dp)
-                                    Text(cl.portaalerta.data.Iccid.pretty(s.iccid), style = MaterialTheme.typography.bodyMedium)
-                                }
+            item {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            if (scans.isEmpty()) "Chips y fotos" else "Chips y fotos (${scans.size})",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        scans.forEach { s ->
+                            Row(
+                                Modifier.fillMaxWidth().clickable { vm.push(Screen.ChipResult(s.id, null, s.iccid, id)) },
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                PhotoThumb(s.photoPath, 48.dp)
+                                Text(cl.portaalerta.data.Iccid.pretty(s.iccid), style = MaterialTheme.typography.bodyMedium)
                             }
-                            TextButton(onClick = { confirmPurge = true }) {
-                                Text("Purgar fotos de este cliente", color = MaterialTheme.colorScheme.error)
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedButton(onClick = { vm.push(Screen.Scanner(id)) }) { Text("Leer chip") }
+                            if (scans.isNotEmpty()) {
+                                TextButton(onClick = { confirmPurge = true }) {
+                                    Text("Purgar fotos", color = MaterialTheme.colorScheme.error)
+                                }
                             }
                         }
                     }

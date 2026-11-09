@@ -85,7 +85,8 @@ fun AppRoot(vm: MainViewModel) {
                 is Screen.FollowupEdit -> FollowupEditScreen(vm, screen)
                 Screen.Settings -> SettingsScreen(vm)
                 Screen.Import -> ImportScreen(vm)
-                Screen.Scanner -> ScannerScreen(vm)
+                is Screen.Scanner -> ScannerScreen(vm, screen.clientId)
+                Screen.Photos -> PhotosScreen(vm)
                 is Screen.ChipResult -> ChipResultScreen(vm, screen)
             }
         }

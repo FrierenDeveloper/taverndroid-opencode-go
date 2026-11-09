@@ -49,6 +49,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -95,7 +96,6 @@ fun HomeScreen(vm: MainViewModel) {
         TabDef("Agenda", Icons.Default.DateRange),
         TabDef("Clientes", Icons.Default.Person),
         TabDef("Seguros", Icons.Default.Notifications),
-        TabDef("Chips", Icons.Default.Phone),
         TabDef("Resumen", Icons.Default.Info),
     )
     Scaffold(
@@ -107,7 +107,6 @@ fun HomeScreen(vm: MainViewModel) {
                         .replaceFirstChar { it.uppercase() }
                     1 -> if (clients.size == 1) "1 cliente" else "${clients.size} clientes"
                     2 -> "Cuenta regresiva de seguros"
-                    3 -> "Lector de chips"
                     else -> "Tu mes en números"
                 },
                 actions = {
@@ -167,7 +166,6 @@ fun HomeScreen(vm: MainViewModel) {
             0 -> AgendaTab(vm, padding)
             1 -> ClientsTab(vm, padding)
             2 -> InsuranceTab(vm, padding)
-            3 -> ChipsTab(vm, padding)
             else -> SummaryTab(vm, padding)
         }
     }
@@ -277,10 +275,10 @@ private fun ClientsTab(vm: MainViewModel, padding: PaddingValues) {
             singleLine = true,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         )
-        TextButton(
-            onClick = { vm.push(Screen.Import) },
-            modifier = Modifier.padding(horizontal = 8.dp),
-        ) { Text("Importar desde los contactos del teléfono") }
+        Row(Modifier.padding(horizontal = 8.dp)) {
+            TextButton(onClick = { vm.push(Screen.Scanner(null)) }) { Text("Leer chip") }
+            TextButton(onClick = { vm.push(Screen.Import) }) { Text("Importar contactos") }
+        }
         if (filtered.isEmpty()) {
             EmptyState(if (clients.isEmpty()) "Aún no tienes clientes guardados." else "Sin resultados.")
         } else {
@@ -382,6 +380,10 @@ private fun SettingsTab(vm: MainViewModel, padding: PaddingValues) {
     var tplPort by remember { mutableStateOf(s.template(FollowupType.PORTABILITY)) }
     var tplIns by remember { mutableStateOf(s.template(FollowupType.INSURANCE)) }
     var goal by remember { mutableIntStateOf(s.monthlyGoal) }
+    var lock by remember { mutableStateOf(s.lockEnabled) }
+    val deviceSecure = remember {
+        (ctx.getSystemService(android.app.KeyguardManager::class.java))?.isDeviceSecure == true
+    }
     var saved by remember { mutableStateOf(false) }
 
     Column(
@@ -452,6 +454,7 @@ private fun SettingsTab(vm: MainViewModel, padding: PaddingValues) {
                 s.countryCode = cc
                 s.notifyHour = hour
                 s.monthlyGoal = goal
+                s.lockEnabled = lock
                 s.setMonths(FollowupType.PORTABILITY, portMonths)
                 s.setLeadDays(FollowupType.PORTABILITY, portLead)
                 s.setMonths(FollowupType.INSURANCE, insMonths)
@@ -463,6 +466,25 @@ private fun SettingsTab(vm: MainViewModel, padding: PaddingValues) {
             },
             modifier = Modifier.fillMaxWidth(),
         ) { Text(if (saved) "Guardado ✓" else "Guardar ajustes") }
+
+        HorizontalDivider()
+        Text("Privacidad", style = MaterialTheme.typography.titleSmall)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Bloquear la app con el PIN, patrón o huella del teléfono", Modifier.weight(1f))
+            Switch(checked = lock, onCheckedChange = { lock = it })
+        }
+        Text(
+            if (deviceSecure) {
+                "Se pide al abrir y después de 1 minuto fuera de la app. También oculta la app en recientes y bloquea las capturas de pantalla. Se aplica la próxima vez que abras la app."
+            } else {
+                "Tu teléfono no tiene bloqueo de pantalla. Configura un PIN o patrón en los ajustes del teléfono para que esta protección funcione."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = if (deviceSecure) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+        )
+        OutlinedButton(onClick = { vm.push(Screen.Photos) }, modifier = Modifier.fillMaxWidth()) {
+            Text("Fotos y chips guardados")
+        }
 
         HorizontalDivider()
         Text("Respaldo", style = MaterialTheme.typography.titleSmall)

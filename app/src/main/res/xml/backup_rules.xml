@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
-    <!-- Las fotos de chips no salen del teléfono: ni respaldo en Google Drive ni Google Fotos. -->
+    <!-- Nada de clientes ni fotos sale del teléfono hacia Google (Drive, Fotos). -->
     <exclude domain="file" path="chips/" />
+    <exclude domain="database" path="portaalerta.db" />
+    <exclude domain="database" path="portaalerta.db-wal" />
+    <exclude domain="database" path="portaalerta.db-shm" />
 </full-backup-content>

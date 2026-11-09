@@ -127,7 +127,7 @@ fun PhotoThumb(path: String?, size: Dp, modifier: Modifier = Modifier) {
 
 /** Abre el selector de fotos del sistema (sin permisos), copia la elegida a la carpeta privada y la analiza. */
 @Composable
-private fun rememberGalleryPicker(vm: MainViewModel, replaceScreen: Boolean): () -> Unit {
+private fun rememberGalleryPicker(vm: MainViewModel, replaceScreen: Boolean, clientId: Long?): () -> Unit {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
@@ -138,7 +138,7 @@ private fun rememberGalleryPicker(vm: MainViewModel, replaceScreen: Boolean): ()
                 if (file != null && iccid == null) {
                     Toast.makeText(ctx, "No pude leer el número. Puedes escribirlo a mano.", Toast.LENGTH_LONG).show()
                 }
-                val next = Screen.ChipResult(null, file?.path, iccid.orEmpty())
+                val next = Screen.ChipResult(null, file?.path, iccid.orEmpty(), clientId)
                 if (replaceScreen) vm.replaceTop(next) else vm.push(next)
             }
         }
@@ -148,12 +148,30 @@ private fun rememberGalleryPicker(vm: MainViewModel, replaceScreen: Boolean): ()
 
 // ---------------------------------------------------------------- pestaña "Chips"
 
+/** Pantalla "Fotos y chips guardados" (se abre desde Ajustes): lista, purga y lector sin cliente. */
 @Composable
-fun ChipsTab(vm: MainViewModel, padding: PaddingValues) {
+fun PhotosScreen(vm: MainViewModel) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                colors = appBarColors(),
+                title = { Text("Fotos y chips") },
+                navigationIcon = {
+                    IconButton(onClick = { vm.pop() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
+                    }
+                },
+            )
+        },
+    ) { padding -> ChipsTab(vm, padding) }
+}
+
+@Composable
+private fun ChipsTab(vm: MainViewModel, padding: PaddingValues) {
     val scans by vm.scans.collectAsState()
     val clients by vm.clients.collectAsState()
     val rejected by vm.rejectedWithPhotos.collectAsState()
-    val pickFromGallery = rememberGalleryPicker(vm, replaceScreen = false)
+    val pickFromGallery = rememberGalleryPicker(vm, replaceScreen = false, clientId = null)
     var confirmPurge by remember { mutableStateOf(false) }
     val names = remember(clients) { clients.associate { it.id to it.name } }
 
@@ -171,7 +189,7 @@ fun ChipsTab(vm: MainViewModel, padding: PaddingValues) {
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Button(onClick = { vm.push(Screen.Scanner) }, modifier = Modifier.fillMaxWidth()) {
+                    Button(onClick = { vm.push(Screen.Scanner(null)) }, modifier = Modifier.fillMaxWidth()) {
                         Text("Leer chip con la cámara")
                     }
                     OutlinedButton(onClick = pickFromGallery, modifier = Modifier.fillMaxWidth()) {
@@ -211,7 +229,7 @@ fun ChipsTab(vm: MainViewModel, padding: PaddingValues) {
             )
         }
         items(scans, key = { it.id }) { s ->
-            Card(Modifier.fillMaxWidth().clickable { vm.push(Screen.ChipResult(s.id, null, s.iccid)) }) {
+            Card(Modifier.fillMaxWidth().clickable { vm.push(Screen.ChipResult(s.id, null, s.iccid, s.clientId)) }) {
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     PhotoThumb(s.photoPath, 56.dp)
                     Column(Modifier.weight(1f)) {
@@ -247,7 +265,7 @@ fun ChipsTab(vm: MainViewModel, padding: PaddingValues) {
 // ---------------------------------------------------------------- lector en vivo
 
 @Composable
-fun ScannerScreen(vm: MainViewModel) {
+fun ScannerScreen(vm: MainViewModel, clientId: Long?) {
     val ctx = LocalContext.current
     var granted by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(ctx, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
@@ -260,7 +278,7 @@ fun ScannerScreen(vm: MainViewModel) {
     var capture by remember { mutableStateOf<ImageCapture?>(null) }
     var message by remember { mutableStateOf("Apunta al código de barras o al número del chip") }
     val handled = remember { AtomicBoolean(false) }
-    val pickFromGallery = rememberGalleryPicker(vm, replaceScreen = true)
+    val pickFromGallery = rememberGalleryPicker(vm, replaceScreen = true, clientId = clientId)
 
     LaunchedEffect(torch, camera) { camera?.cameraControl?.enableTorch(torch) }
 
@@ -270,7 +288,7 @@ fun ScannerScreen(vm: MainViewModel) {
         val file = PhotoStore.newTempFile(ctx)
         val cap = capture
         if (cap == null) {
-            vm.replaceTop(Screen.ChipResult(null, null, iccid))
+            vm.replaceTop(Screen.ChipResult(null, null, iccid, clientId))
             return
         }
         cap.takePicture(
@@ -278,11 +296,11 @@ fun ScannerScreen(vm: MainViewModel) {
             ContextCompat.getMainExecutor(ctx),
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                    vm.replaceTop(Screen.ChipResult(null, file.path, iccid))
+                    vm.replaceTop(Screen.ChipResult(null, file.path, iccid, clientId))
                 }
 
                 override fun onError(exception: ImageCaptureException) {
-                    vm.replaceTop(Screen.ChipResult(null, null, iccid))
+                    vm.replaceTop(Screen.ChipResult(null, null, iccid, clientId))
                 }
             },
         )
@@ -330,7 +348,7 @@ fun ScannerScreen(vm: MainViewModel) {
                         Text("Galería")
                     }
                     FilledTonalButton(
-                        onClick = { vm.replaceTop(Screen.ChipResult(null, null, "")) },
+                        onClick = { vm.replaceTop(Screen.ChipResult(null, null, "", clientId)) },
                         modifier = Modifier.weight(1f),
                         contentPadding = PaddingValues(horizontal = 8.dp),
                     ) { Text("Escribir") }
@@ -404,7 +422,7 @@ fun ChipResultScreen(vm: MainViewModel, screen: Screen.ChipResult) {
 
     var iccid by remember { mutableStateOf(existing?.iccid ?: screen.iccid) }
     var note by remember { mutableStateOf(existing?.note.orEmpty()) }
-    var clientId by remember { mutableStateOf(existing?.clientId) }
+    var clientId by remember { mutableStateOf(existing?.clientId ?: screen.clientId) }
     var menuOpen by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var duplicate by remember { mutableStateOf<ChipScan?>(null) }

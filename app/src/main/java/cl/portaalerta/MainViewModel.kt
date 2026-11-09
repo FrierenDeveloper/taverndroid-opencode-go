@@ -35,8 +35,9 @@ sealed interface Screen {
     data class ClientDetail(val id: Long) : Screen
     data class ClientEdit(val id: Long?) : Screen
     data object Settings : Screen
-    data object Scanner : Screen
-    data class ChipResult(val scanId: Long?, val tempPath: String?, val iccid: String) : Screen
+    data class Scanner(val clientId: Long?) : Screen
+    data object Photos : Screen
+    data class ChipResult(val scanId: Long?, val tempPath: String?, val iccid: String, val clientId: Long?) : Screen
     data object Import : Screen
     data class FollowupEdit(val followupId: Long?, val clientId: Long?, val type: FollowupType) : Screen
 }
@@ -60,6 +61,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var clientQuery by mutableStateOf("")
 
     var purgePrompt by mutableStateOf<PurgePrompt?>(null)
+
+    /** true = se muestra la pantalla de bloqueo en vez de la app. */
+    var locked by mutableStateOf(true)
 
     // ---- navegación mínima (pila de pantallas) ----
     val stack = mutableStateListOf<Screen>(Screen.Home)

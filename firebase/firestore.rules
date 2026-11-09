@@ -1,0 +1,81 @@
+// Reglas de seguridad de Firestore para el MODO EQUIPO de PortaAlerta.
+// ESTADO: preparadas, SIN PROBAR. Antes de usar con datos reales, pruébalas en el simulador de reglas
+// de Firebase con la lista de docs/EQUIPO_FIREBASE.md (sección "Pruebas obligatorias").
+//
+// Modelo:
+//   teams/{teamId}                          { name, leaderUid }
+//   teams/{teamId}/private/join             { joinCode }          <- solo la líder lo lee
+//   teams/{teamId}/members/{uid}            { name, role: 'leader' | 'exec', joinCode? (solo al crear) }
+//   teams/{teamId}/members/{uid}/clients/{id}
+//   teams/{teamId}/members/{uid}/followups/{id}
+//   teams/{teamId}/members/{uid}/alerts/{id}                       <- avisos de la líder al ejecutivo
+//
+// Garantías buscadas:
+//   - Un ejecutivo lee y escribe SOLO lo suyo.
+//   - La líder lee todo, pero no modifica los clientes ni recordatorios de los ejecutivos.
+//   - Si la líder borra el documento de un miembro, ese ejecutivo pierde todo acceso.
+//   - Las fotos de chips NUNCA se suben (no hay reglas de Storage porque no se usa Storage).
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+    function teamPath(teamId) {
+      return /databases/$(database)/documents/teams/$(teamId);
+    }
+    function isLeader(teamId) {
+      return signedIn() && get(teamPath(teamId)).data.leaderUid == request.auth.uid;
+    }
+    function isMember(teamId) {
+      return signedIn() && exists(/databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid));
+    }
+
+    match /teams/{teamId} {
+      // Quien crea el equipo queda como líder.
+      allow create: if signedIn() && request.resource.data.leaderUid == request.auth.uid;
+      allow read: if isLeader(teamId) || isMember(teamId);
+      allow update, delete: if isLeader(teamId);
+
+      // El código de invitación solo lo ve la líder.
+      match /private/{doc} {
+        allow read, write: if isLeader(teamId);
+      }
+
+      match /members/{uid} {
+        allow read: if signedIn() && (request.auth.uid == uid || isLeader(teamId));
+
+        // La líder se registra a sí misma; un ejecutivo solo entra con el código correcto.
+        allow create: if signedIn() && request.auth.uid == uid && (
+          (request.resource.data.role == 'leader' && isLeader(teamId)) ||
+          (request.resource.data.role == 'exec' &&
+           request.resource.data.joinCode == get(/databases/$(database)/documents/teams/$(teamId)/private/join).data.joinCode)
+        );
+
+        // Nadie puede cambiarse el rol. La líder puede editar o expulsar.
+        allow update: if (request.auth.uid == uid && request.resource.data.role == resource.data.role) || isLeader(teamId);
+        allow delete: if isLeader(teamId);
+
+        match /clients/{id} {
+          allow read: if (request.auth.uid == uid && isMember(teamId)) || isLeader(teamId);
+          allow write: if request.auth.uid == uid && isMember(teamId);
+        }
+        match /followups/{id} {
+          allow read: if (request.auth.uid == uid && isMember(teamId)) || isLeader(teamId);
+          allow write: if request.auth.uid == uid && isMember(teamId);
+        }
+        match /alerts/{id} {
+          allow create: if isLeader(teamId);
+          allow read, update: if request.auth.uid == uid && isMember(teamId);
+          allow delete: if isLeader(teamId) || (request.auth.uid == uid && isMember(teamId));
+        }
+      }
+    }
+
+    // Todo lo demás está cerrado.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

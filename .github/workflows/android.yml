@@ -16,23 +16,56 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
+
+      - name: Llave de firma (si hay secretos)
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+            echo "Firmando con la llave fija."
+          else
+            echo "Sin secretos: se firma con la llave de depuración."
+          fi
+
       - name: Unit tests
         run: ./gradlew --no-daemon testDebugUnitTest
-      - name: Build debug APK
-        run: ./gradlew --no-daemon assembleDebug
-      - name: Permisos del manifiesto final
-        if: always()
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+      - name: Build release APK
+        run: ./gradlew --no-daemon assembleRelease
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+      - name: Verificar permisos del APK final
         run: |
-          f=$(find app/build -path '*merged_manifest*' -name AndroidManifest.xml | head -1)
+          f=$(find app/build -path '*merged_manifests/release*' -name AndroidManifest.xml | head -1)
           echo "Manifiesto: $f"
-          grep -hE "uses-permission|debuggable|allowBackup|exported" "$f" | sed 's/^ *//' | sort -u
+          grep -hE "uses-permission|debuggable|allowBackup" "$f" | sed 's/^ *//' | sort -u
+          # La app es 100 % sin conexión. Con el modo equipo (app/google-services.json) este control se omite.
+          if [ ! -f app/google-services.json ]; then
+            if grep -q "permission.INTERNET" "$f"; then
+              echo "::error::El APK declara el permiso INTERNET"; exit 1
+            fi
+          fi
+          if grep -q 'debuggable="true"' "$f"; then
+            echo "::error::El APK de versión final es depurable"; exit 1
+          fi
+
       - name: Lint
         continue-on-error: true
         run: ./gradlew --no-daemon lintDebug
       - name: Lint report
         if: always()
         run: cat app/build/reports/lint.txt || true
+
       - uses: actions/upload-artifact@v4
         with:
-          name: PortaAlerta-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: PortaAlerta-apk
+          path: app/build/outputs/apk/release/app-release.apk

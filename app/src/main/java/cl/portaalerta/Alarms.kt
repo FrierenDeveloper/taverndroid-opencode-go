@@ -119,10 +119,18 @@ object Notifier {
         val nm = ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (nm.getNotificationChannel(CHANNEL) == null) {
             nm.createNotificationChannel(
-                NotificationChannel(CHANNEL, "Recordatorios de clientes", NotificationManager.IMPORTANCE_HIGH),
+                NotificationChannel(CHANNEL, "Recordatorios de clientes", NotificationManager.IMPORTANCE_HIGH)
+                    .apply { lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE },
             )
         }
     }
+
+    /** Lo que se ve con el teléfono bloqueado: sin nombres de clientes. */
+    private fun publicVersion(ctx: Context) = NotificationCompat.Builder(ctx, CHANNEL)
+        .setSmallIcon(R.drawable.ic_bell)
+        .setContentTitle("PortaAlerta")
+        .setContentText("Tienes un recordatorio")
+        .build()
 
     private fun canNotify(ctx: Context): Boolean =
         Build.VERSION.SDK_INT < 33 ||
@@ -143,6 +151,8 @@ object Notifier {
         val title = if (overdue == 1) "Tienes 1 recordatorio atrasado" else "Tienes $overdue recordatorios atrasados"
         val notification = NotificationCompat.Builder(ctx, CHANNEL)
             .setSmallIcon(R.drawable.ic_bell)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(publicVersion(ctx))
             .setContentTitle(title)
             .setContentText("Márcalos como hechos o cambia la fecha para dejar el estado al día.")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -189,6 +199,8 @@ object Notifier {
 
         val notification = NotificationCompat.Builder(ctx, CHANNEL)
             .setSmallIcon(R.drawable.ic_bell)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(publicVersion(ctx))
             .setContentTitle("${client.name} · ${f.type.label}")
             .setContentText(whenText)
             .setStyle(NotificationCompat.BigTextStyle().bigText("$whenText\n${f.detail}".trim()))

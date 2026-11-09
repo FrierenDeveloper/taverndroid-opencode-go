@@ -24,3 +24,15 @@ App nativa (Kotlin + Jetpack Compose + Room) para no perder ventas por portabili
 El APK se genera en GitHub Actions (pestaña **Actions → Build APK → artefacto `PortaAlerta-debug-apk`**).
 En local: abre la carpeta en Android Studio, o `./gradlew assembleDebug` (JDK 17 + Android SDK 34).
 Requiere Android 8.0+ (API 26). En Android 13+ acepta el permiso de notificaciones; en 12+ permite “Alarmas y recordatorios” desde Ajustes para que suenen a la hora exacta.
+
+## Seguridad y privacidad (versión 1.1)
+- **Sin internet**: el APK no declara el permiso `INTERNET` (el CI lo verifica en cada compilación).
+- **Bloqueo**: pide el PIN, patrón o huella del teléfono al abrir y tras 1 minuto fuera de la app; oculta la app en recientes y bloquea capturas.
+- **Notificaciones discretas** con el teléfono bloqueado (sin nombres de clientes).
+- **Fotos de chips** solo en la carpeta privada de la app; **ni fotos ni base de clientes** van al respaldo de Google.
+- Versión final no depurable. Para poder **actualizar sin desinstalar**, configura la llave fija (ver abajo).
+- Modo equipo con Firebase: preparado en `docs/EQUIPO_FIREBASE.md` y `firebase/firestore.rules`.
+
+### Llave de firma fija (una vez)
+En GitHub: Settings → Secrets and variables → Actions → New repository secret. Crear `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS` y `KEY_PASSWORD`.
+Mientras no existan, el APK se firma con una llave de depuración distinta en cada compilación (hay que desinstalar para actualizar).
