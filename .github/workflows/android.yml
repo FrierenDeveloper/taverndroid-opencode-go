@@ -20,6 +20,12 @@ jobs:
         run: ./gradlew --no-daemon testDebugUnitTest
       - name: Build debug APK
         run: ./gradlew --no-daemon assembleDebug
+      - name: Permisos del manifiesto final
+        if: always()
+        run: |
+          f=$(find app/build -path '*merged_manifest*' -name AndroidManifest.xml | head -1)
+          echo "Manifiesto: $f"
+          grep -hE "uses-permission|debuggable|allowBackup|exported" "$f" | sed 's/^ *//' | sort -u
       - name: Lint
         continue-on-error: true
         run: ./gradlew --no-daemon lintDebug
