@@ -57,6 +57,25 @@ import java.time.LocalDate
 fun AppRoot(vm: MainViewModel) {
     val screen = vm.stack.last()
     BackHandler(enabled = vm.stack.size > 1) { vm.pop() }
+    vm.purgePrompt?.let { p ->
+        AlertDialog(
+            onDismissRequest = { vm.purgePrompt = null },
+            title = { Text("Cliente rechazado") },
+            text = {
+                Text(
+                    "${p.client.name} no quiso la oferta y tienes ${p.count} " +
+                        "${if (p.count == 1) "foto suya guardada" else "fotos suyas guardadas"}. ¿Las eliminas ahora?",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.purgeClientPhotos(p.client.id)
+                    vm.purgePrompt = null
+                }) { Text("Eliminar fotos") }
+            },
+            dismissButton = { TextButton(onClick = { vm.purgePrompt = null }) { Text("Conservar") } },
+        )
+    }
     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         key(screen) {
             when (screen) {
@@ -66,6 +85,8 @@ fun AppRoot(vm: MainViewModel) {
                 is Screen.FollowupEdit -> FollowupEditScreen(vm, screen)
                 Screen.Settings -> SettingsScreen(vm)
                 Screen.Import -> ImportScreen(vm)
+                Screen.Scanner -> ScannerScreen(vm)
+                is Screen.ChipResult -> ChipResultScreen(vm, screen)
             }
         }
     }

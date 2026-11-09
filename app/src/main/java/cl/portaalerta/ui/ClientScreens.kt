@@ -151,6 +151,8 @@ fun ClientDetailScreen(vm: MainViewModel, id: Long) {
     var confirmDelete by remember { mutableStateOf(false) }
     var followupToDelete by remember { mutableStateOf<Followup?>(null) }
     var doneTarget by remember { mutableStateOf<Followup?>(null) }
+    val scans by remember(id) { vm.scansFor(id) }.collectAsState(initial = emptyList())
+    var confirmPurge by remember { mutableStateOf(false) }
 
     val c = client
     Scaffold(
@@ -229,6 +231,28 @@ fun ClientDetailScreen(vm: MainViewModel, id: Long) {
                     }
                 }
             }
+            if (scans.isNotEmpty()) {
+                item {
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Chips y fotos (${scans.size})", style = MaterialTheme.typography.titleMedium)
+                            scans.forEach { s ->
+                                Row(
+                                    Modifier.fillMaxWidth().clickable { vm.push(Screen.ChipResult(s.id, null, s.iccid)) },
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    PhotoThumb(s.photoPath, 48.dp)
+                                    Text(cl.portaalerta.data.Iccid.pretty(s.iccid), style = MaterialTheme.typography.bodyMedium)
+                                }
+                            }
+                            TextButton(onClick = { confirmPurge = true }) {
+                                Text("Purgar fotos de este cliente", color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
+                }
+            }
             if (followups.isEmpty()) {
                 item {
                     Text(
@@ -269,6 +293,20 @@ fun ClientDetailScreen(vm: MainViewModel, id: Long) {
         },
         onDismiss = { doneTarget = null },
     )
+    if (confirmPurge) {
+        AlertDialog(
+            onDismissRequest = { confirmPurge = false },
+            title = { Text("Purgar fotos") },
+            text = { Text("Se borrarán para siempre las fotos y lecturas de chip de este cliente.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmPurge = false
+                    vm.purgeClientPhotos(id)
+                }) { Text("Eliminar") }
+            },
+            dismissButton = { TextButton(onClick = { confirmPurge = false }) { Text("Cancelar") } },
+        )
+    }
     if (confirmDelete && c != null) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },

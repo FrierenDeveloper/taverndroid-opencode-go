@@ -51,3 +51,50 @@ class LogicTest {
         assertEquals("hace 3 días", Dates.relative(-3))
     }
 }
+
+class IccidTest {
+    private val ok19 = "8956526018159083015"
+    private val ok20 = "89566613186091390997"
+
+    @Test
+    fun validIccids() {
+        assertTrue(cl.portaalerta.data.Iccid.isValid(ok19))
+        assertTrue(cl.portaalerta.data.Iccid.isValid(ok20))
+    }
+
+    @Test
+    fun rejectsBadChecksumPrefixAndLength() {
+        assertFalse(cl.portaalerta.data.Iccid.isValid("8956526018159083016"))
+        assertFalse(cl.portaalerta.data.Iccid.isValid("7956526018159083015"))
+        assertFalse(cl.portaalerta.data.Iccid.isValid("895652601815908301"))
+    }
+
+    @Test
+    fun findsNumberInOcrText() {
+        assertEquals(ok19, cl.portaalerta.data.Iccid.findIn("SIM\n8956 5260 1815 9083 015\nPUK 1234"))
+        assertEquals(ok19, cl.portaalerta.data.Iccid.findIn("8956 5260 1815\n9083 015"))
+        assertEquals(ok20, cl.portaalerta.data.Iccid.findIn("ICCID: 8956-6613-1860-9139-0997"))
+    }
+
+    @Test
+    fun findsNumberPrintedOnTwoLinesOfTen() {
+        // Así viene impreso sobre el chip: dos líneas de 10 dígitos.
+        assertEquals(ok20, cl.portaalerta.data.Iccid.findIn("8956661318\n6091390997\nWOM"))
+    }
+
+    @Test
+    fun fixesCommonOcrConfusions() {
+        assertEquals(ok19, cl.portaalerta.data.Iccid.findIn("8956 5260 1815 9O83 O15"))
+    }
+
+    @Test
+    fun readsBarcodeContent() {
+        assertEquals(ok19, cl.portaalerta.data.Iccid.fromCode(ok19))
+        assertEquals(null, cl.portaalerta.data.Iccid.fromCode("1234567890123"))
+    }
+
+    @Test
+    fun prettyGroupsOfFour() {
+        assertEquals("8956 5260 1815 9083 015", cl.portaalerta.data.Iccid.pretty(ok19))
+    }
+}

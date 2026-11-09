@@ -11,18 +11,23 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import cl.portaalerta.data.AppDatabase
 import cl.portaalerta.data.AppSettings
+import cl.portaalerta.data.ChipScan
+import cl.portaalerta.data.PhotoStore
 import cl.portaalerta.data.Client
 import cl.portaalerta.data.Dates
 import cl.portaalerta.data.Followup
 import cl.portaalerta.data.FollowupOutcome
 import cl.portaalerta.data.FollowupStatus
 import cl.portaalerta.data.FollowupType
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 import java.time.LocalDate
 
 sealed interface Screen {
@@ -30,11 +35,16 @@ sealed interface Screen {
     data class ClientDetail(val id: Long) : Screen
     data class ClientEdit(val id: Long?) : Screen
     data object Settings : Screen
+    data object Scanner : Screen
+    data class ChipResult(val scanId: Long?, val tempPath: String?, val iccid: String) : Screen
     data object Import : Screen
     data class FollowupEdit(val followupId: Long?, val clientId: Long?, val type: FollowupType) : Screen
 }
 
 data class AgendaItem(val followup: Followup, val client: Client)
+
+/** Aviso al marcar "No le interesó": el cliente tiene fotos guardadas. */
+data class PurgePrompt(val client: Client, val count: Int)
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val ctx: Application = app
@@ -48,6 +58,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var calendarSelected by mutableLongStateOf(LocalDate.now().toEpochDay())
     var summaryOffset by mutableIntStateOf(0)
     var clientQuery by mutableStateOf("")
+
+    var purgePrompt by mutableStateOf<PurgePrompt?>(null)
 
     // ---- navegación mínima (pila de pantallas) ----
     val stack = mutableStateListOf<Screen>(Screen.Home)
@@ -90,6 +102,66 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val allFollowups: StateFlow<List<Followup>> =
         dao.followupsFlow().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    val scans: StateFlow<List<ChipScan>> =
+        dao.scansFlow().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Clientes que rechazaron (sin nada abierto ni cerrado) y todavía tienen fotos guardadas. */
+    val rejectedWithPhotos: StateFlow<List<Pair<Client, Int>>> =
+        combine(dao.clients(), dao.followupsFlow(), dao.scansFlow()) { cs, fs, ss ->
+            val photos = ss.filter { it.clientId != null && it.photoPath != null }.groupBy { it.clientId!! }
+            cs.mapNotNull { c ->
+                val mine = fs.filter { it.clientId == c.id }
+                val rejected = mine.any { it.outcome == FollowupOutcome.REJECTED }
+                val active = mine.any { it.status == FollowupStatus.OPEN || it.outcome == FollowupOutcome.CLOSED }
+                val n = photos[c.id]?.size ?: 0
+                if (rejected && !active && n > 0) c to n else null
+            }
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    fun scansFor(clientId: Long): Flow<List<ChipScan>> = dao.scansFor(clientId)
+    suspend fun getScan(id: Long): ChipScan? = dao.scan(id)
+    suspend fun findScanByIccid(iccid: String): ChipScan? = dao.scanByIccid(iccid)
+
+    /** Guarda la lectura. Si venía de una foto temporal, la pasa a su lugar definitivo. */
+    fun saveScan(scan: ChipScan, tempPath: String?, onSaved: () -> Unit) {
+        viewModelScope.launch {
+            val path = withContext(Dispatchers.IO) {
+                if (tempPath != null) PhotoStore.promote(ctx, File(tempPath)) else scan.photoPath
+            }
+            val s = scan.copy(photoPath = path)
+            if (s.id == 0L) dao.insertScan(s) else dao.updateScan(s)
+            onSaved()
+        }
+    }
+
+    fun deleteScan(scan: ChipScan) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { PhotoStore.delete(scan.photoPath) }
+            dao.deleteScan(scan)
+        }
+    }
+
+    /** Borra fotos y lecturas de chip de un cliente. */
+    fun purgeClientPhotos(clientId: Long) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { dao.scansNow(clientId).forEach { PhotoStore.delete(it.photoPath) } }
+            dao.deleteScansFor(clientId)
+        }
+    }
+
+    fun purgeAllRejected() {
+        viewModelScope.launch {
+            for ((client, _) in rejectedWithPhotos.value) {
+                withContext(Dispatchers.IO) { dao.scansNow(client.id).forEach { PhotoStore.delete(it.photoPath) } }
+                dao.deleteScansFor(client.id)
+            }
+        }
+    }
+
+    init {
+        viewModelScope.launch(Dispatchers.IO) { PhotoStore.cleanTmp(ctx) }
+    }
+
     fun clientFlow(id: Long): Flow<Client?> = dao.clientFlow(id)
     fun followupsFor(clientId: Long): Flow<List<Followup>> = dao.followupsFor(clientId)
     suspend fun getClient(id: Long): Client? = dao.client(id)
@@ -110,6 +182,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun deleteClient(c: Client) {
         viewModelScope.launch {
             dao.followupsNow(c.id).forEach { Scheduler.cancel(ctx, it.id) }
+            withContext(Dispatchers.IO) { dao.scansNow(c.id).forEach { PhotoStore.delete(it.photoPath) } }
             dao.deleteClient(c)
         }
     }
@@ -133,6 +206,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 f.copy(status = FollowupStatus.DONE, outcome = outcome, doneAt = System.currentTimeMillis()),
             )
             Scheduler.cancel(ctx, f.id)
+            if (outcome == FollowupOutcome.REJECTED) {
+                val n = dao.scansNow(f.clientId).count { it.photoPath != null }
+                if (n > 0) dao.client(f.clientId)?.let { purgePrompt = PurgePrompt(it, n) }
+            }
         }
     }
 

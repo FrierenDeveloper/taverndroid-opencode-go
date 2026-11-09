@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
@@ -94,6 +95,7 @@ fun HomeScreen(vm: MainViewModel) {
         TabDef("Agenda", Icons.Default.DateRange),
         TabDef("Clientes", Icons.Default.Person),
         TabDef("Seguros", Icons.Default.Notifications),
+        TabDef("Chips", Icons.Default.Phone),
         TabDef("Resumen", Icons.Default.Info),
     )
     Scaffold(
@@ -105,6 +107,7 @@ fun HomeScreen(vm: MainViewModel) {
                         .replaceFirstChar { it.uppercase() }
                     1 -> if (clients.size == 1) "1 cliente" else "${clients.size} clientes"
                     2 -> "Cuenta regresiva de seguros"
+                    3 -> "Lector de chips"
                     else -> "Tu mes en números"
                 },
                 actions = {
@@ -164,6 +167,7 @@ fun HomeScreen(vm: MainViewModel) {
             0 -> AgendaTab(vm, padding)
             1 -> ClientsTab(vm, padding)
             2 -> InsuranceTab(vm, padding)
+            3 -> ChipsTab(vm, padding)
             else -> SummaryTab(vm, padding)
         }
     }

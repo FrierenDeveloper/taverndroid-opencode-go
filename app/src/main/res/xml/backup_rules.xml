@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- Las fotos de chips no salen del teléfono: ni respaldo en Google Drive ni Google Fotos. -->
+    <exclude domain="file" path="chips/" />
+</full-backup-content>

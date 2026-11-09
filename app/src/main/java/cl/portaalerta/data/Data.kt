@@ -75,6 +75,28 @@ data class Followup(
     val doneAt: Long? = null,
 )
 
+/** Chip leído con el lector. La foto vive solo en el almacenamiento privado de la app. */
+@Entity(
+    tableName = "chip_scans",
+    foreignKeys = [
+        ForeignKey(
+            entity = Client::class,
+            parentColumns = ["id"],
+            childColumns = ["clientId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index("clientId")],
+)
+data class ChipScan(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val iccid: String,
+    val photoPath: String? = null,
+    val clientId: Long? = null,
+    val note: String = "",
+    val createdAt: Long = System.currentTimeMillis(),
+)
+
 @Dao
 interface AppDao {
     @Query("SELECT * FROM clients ORDER BY name COLLATE NOCASE")
@@ -116,6 +138,33 @@ interface AppDao {
     @Query("SELECT * FROM followups ORDER BY dueDate")
     suspend fun allFollowups(): List<Followup>
 
+    @Query("SELECT * FROM chip_scans ORDER BY createdAt DESC")
+    fun scansFlow(): Flow<List<ChipScan>>
+
+    @Query("SELECT * FROM chip_scans WHERE clientId = :clientId ORDER BY createdAt DESC")
+    fun scansFor(clientId: Long): Flow<List<ChipScan>>
+
+    @Query("SELECT * FROM chip_scans WHERE clientId = :clientId")
+    suspend fun scansNow(clientId: Long): List<ChipScan>
+
+    @Query("SELECT * FROM chip_scans WHERE id = :id")
+    suspend fun scan(id: Long): ChipScan?
+
+    @Query("SELECT * FROM chip_scans WHERE iccid = :iccid LIMIT 1")
+    suspend fun scanByIccid(iccid: String): ChipScan?
+
+    @Insert
+    suspend fun insertScan(s: ChipScan): Long
+
+    @Update
+    suspend fun updateScan(s: ChipScan)
+
+    @Delete
+    suspend fun deleteScan(s: ChipScan)
+
+    @Query("DELETE FROM chip_scans WHERE clientId = :clientId")
+    suspend fun deleteScansFor(clientId: Long)
+
     @Query("SELECT * FROM followups WHERE id = :id")
     suspend fun followup(id: Long): Followup?
 
@@ -129,7 +178,7 @@ interface AppDao {
     suspend fun deleteFollowup(f: Followup)
 }
 
-@Database(entities = [Client::class, Followup::class], version = 2, exportSchema = false)
+@Database(entities = [Client::class, Followup::class, ChipScan::class], version = 3, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): AppDao
 
@@ -138,6 +187,18 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE followups ADD COLUMN outcome TEXT")
                 db.execSQL("ALTER TABLE followups ADD COLUMN doneAt INTEGER")
+            }
+        }
+
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `chip_scans` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`iccid` TEXT NOT NULL, `photoPath` TEXT, `clientId` INTEGER, `note` TEXT NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, FOREIGN KEY(`clientId`) REFERENCES `clients`(`id`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE )",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_chip_scans_clientId` ON `chip_scans` (`clientId`)")
             }
         }
 
@@ -150,7 +211,7 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "portaalerta.db",
-                ).addMigrations(MIGRATION_1_2).build().also { instance = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
             }
     }
 }
