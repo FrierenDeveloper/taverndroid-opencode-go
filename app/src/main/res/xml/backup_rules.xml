@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<full-backup-content>
-    <!-- Nada de clientes ni fotos sale del teléfono hacia Google (Drive, Fotos). -->
-    <exclude domain="file" path="chips/" />
-    <exclude domain="database" path="portaalerta.db" />
-    <exclude domain="database" path="portaalerta.db-wal" />
-    <exclude domain="database" path="portaalerta.db-shm" />
-</full-backup-content>

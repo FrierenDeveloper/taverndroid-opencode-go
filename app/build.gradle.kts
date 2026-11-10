@@ -16,7 +16,9 @@ android {
         // En CI cada compilación sube el número, para que Android acepte instalarla encima de la anterior.
         val build = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
         versionCode = build
-        versionName = "1.1.$build"
+        versionName = "1.2.$build"
+        // Solo teléfonos (ARM de 64 y 32 bits): reduce el tamaño del APK.
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
 
     // Llave de firma: el CI la recibe por secretos de GitHub (nunca en el repositorio, que es público).
@@ -80,6 +82,10 @@ dependencies {
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
     implementation("com.google.mlkit:text-recognition:16.0.1")
     implementation("androidx.exifinterface:exifinterface:1.3.7")
+
+    // Base de datos cifrada (SQLCipher) para clientes y recordatorios.
+    implementation("net.zetetic:sqlcipher-android:4.6.1@aar")
+    implementation("androidx.sqlite:sqlite:2.4.0")
 
     testImplementation("junit:junit:4.13.2")
 }
