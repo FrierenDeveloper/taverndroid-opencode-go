@@ -1,5 +1,6 @@
 package cl.portaalerta.ui
 
+import android.content.Context
 import android.os.SystemClock
 import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
@@ -89,8 +90,8 @@ class ChipAnalyzer(private val onRead: (String) -> Unit) : ImageAnalysis.Analyze
 
 /** Lee una foto ya hecha (por ejemplo, una de la galería): código de barras y, si no, texto impreso. */
 object ChipReader {
-    suspend fun readFile(file: File): String? = withContext(Dispatchers.Default) {
-        val bitmap = PhotoStore.loadBitmap(file.path, 2400) ?: return@withContext null
+    suspend fun readFile(ctx: Context, file: File): String? = withContext(Dispatchers.Default) {
+        val bitmap = PhotoStore.loadBitmap(ctx, file.path, 2400) ?: return@withContext null
         val image = InputImage.fromBitmap(bitmap, 0)
         val scanner = BarcodeScanning.getClient()
         val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)

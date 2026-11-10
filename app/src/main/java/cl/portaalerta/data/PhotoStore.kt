@@ -6,25 +6,44 @@ import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.net.Uri
 import androidx.exifinterface.media.ExifInterface
+import java.io.ByteArrayInputStream
 import java.io.File
 import kotlin.math.max
 
 /**
- * Fotos de chips: solo en la carpeta PRIVADA de la app (filesDir). No pasan por la galería del teléfono,
- * así que Google Fotos nunca las ve, y están excluidas del respaldo automático de Android (res/xml).
+ * Fotos de chips. Todas se guardan CIFRADAS (AES-256-GCM) en la carpeta privada de la app:
+ * no pasan por la galería (Google Fotos nunca las ve), no van a ningún respaldo y, aunque alguien copie
+ * los archivos, sin la clave del Keystore de este teléfono no se pueden abrir.
+ * La única copia sin cifrar es la que escribe la cámara en la caché privada durante un instante,
+ * y se borra apenas se cifra.
  */
 object PhotoStore {
     private fun dir(ctx: Context) = File(ctx.filesDir, "chips").apply { mkdirs() }
     private fun tmpDir(ctx: Context) = File(dir(ctx), "tmp").apply { mkdirs() }
+    private fun key(ctx: Context): ByteArray = SecureKeys.secret(ctx, "photo")
 
-    fun newTempFile(ctx: Context): File = File(tmpDir(ctx), "tmp_${System.nanoTime()}.jpg")
+    /** Donde la cámara escribe la foto cruda (caché privada), antes de cifrarla. */
+    fun newRawFile(ctx: Context): File = File(ctx.cacheDir, "raw_${System.nanoTime()}.jpg")
 
-    /** Copia una imagen elegida de la galería a la carpeta privada. La original no se toca. */
+    private fun newTempFile(ctx: Context): File = File(tmpDir(ctx), "tmp_${System.nanoTime()}.enc")
+
+    /** Cifra la foto cruda de la cámara y borra la original. */
+    fun sealRaw(ctx: Context, raw: File): File? = try {
+        val out = newTempFile(ctx)
+        out.writeBytes(PhotoCrypto.encrypt(key(ctx), raw.readBytes()))
+        out
+    } catch (e: Exception) {
+        null
+    } finally {
+        raw.delete()
+    }
+
+    /** Copia cifrada de una imagen elegida de la galería. La original no se toca ni se guarda sin cifrar. */
     fun copyToTemp(ctx: Context, uri: Uri): File? {
         return try {
+            val bytes = ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
             val out = newTempFile(ctx)
-            val input = ctx.contentResolver.openInputStream(uri) ?: return null
-            input.use { src -> out.outputStream().use { dst -> src.copyTo(dst) } }
+            out.writeBytes(PhotoCrypto.encrypt(key(ctx), bytes))
             out
         } catch (e: Exception) {
             null
@@ -33,7 +52,7 @@ object PhotoStore {
 
     /** Mueve una foto temporal a su lugar definitivo y devuelve la ruta nueva. */
     fun promote(ctx: Context, tmp: File): String {
-        val dest = File(dir(ctx), "chip_${System.currentTimeMillis()}.jpg")
+        val dest = File(dir(ctx), "chip_${System.currentTimeMillis()}.enc")
         return if (tmp.renameTo(dest)) dest.path else tmp.path
     }
 
@@ -41,23 +60,32 @@ object PhotoStore {
         if (path != null) runCatching { File(path).delete() }
     }
 
-    /** Borra temporales abandonados (más de una hora). */
+    /** Borra temporales y fotos crudas abandonados (más de una hora). */
     fun cleanTmp(ctx: Context) {
         val limit = System.currentTimeMillis() - 60 * 60 * 1000
         tmpDir(ctx).listFiles()?.filter { it.lastModified() < limit }?.forEach { it.delete() }
+        ctx.cacheDir.listFiles { f -> f.name.startsWith("raw_") && f.lastModified() < limit }?.forEach { it.delete() }
     }
 
-    /** Carga la imagen reducida y ya girada según su orientación EXIF. */
-    fun loadBitmap(path: String, maxPx: Int): Bitmap? {
+    /** Descifra y carga la imagen reducida, ya girada según su orientación EXIF. */
+    fun loadBitmap(ctx: Context, path: String, maxPx: Int): Bitmap? {
+        val bytes = try {
+            PhotoCrypto.decrypt(key(ctx), File(path).readBytes())
+        } catch (e: Exception) {
+            return null
+        }
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(path, bounds)
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
         if (bounds.outWidth <= 0) return null
         var sample = 1
         while (max(bounds.outWidth, bounds.outHeight) / (sample * 2) >= maxPx) sample *= 2
-        val bmp = BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample }) ?: return null
+        val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
+            ?: return null
         val degrees = when (
-            runCatching { ExifInterface(path).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL) }
-                .getOrDefault(ExifInterface.ORIENTATION_NORMAL)
+            runCatching {
+                ExifInterface(ByteArrayInputStream(bytes))
+                    .getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+            }.getOrDefault(ExifInterface.ORIENTATION_NORMAL)
         ) {
             ExifInterface.ORIENTATION_ROTATE_90 -> 90f
             ExifInterface.ORIENTATION_ROTATE_180 -> 180f

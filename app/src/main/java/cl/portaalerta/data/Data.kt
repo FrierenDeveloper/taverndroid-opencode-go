@@ -1,6 +1,7 @@
 package cl.portaalerta.data
 
 import android.content.Context
+import android.util.Base64
 import androidx.room.Dao
 import androidx.room.Database
 import androidx.room.Delete
@@ -13,9 +14,8 @@ import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.Update
-import androidx.room.migration.Migration
-import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.coroutines.flow.Flow
+import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 
 /** Tipos de recordatorio. Los plazos por defecto se pueden cambiar al crear cada uno. */
 enum class FollowupType(val label: String, val defaultMonths: Int, val defaultLeadDays: Int) {
@@ -183,35 +183,26 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): AppDao
 
     companion object {
-        private val MIGRATION_1_2 = object : Migration(1, 2) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("ALTER TABLE followups ADD COLUMN outcome TEXT")
-                db.execSQL("ALTER TABLE followups ADD COLUMN doneAt INTEGER")
-            }
-        }
-
-        private val MIGRATION_2_3 = object : Migration(2, 3) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    "CREATE TABLE IF NOT EXISTS `chip_scans` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
-                        "`iccid` TEXT NOT NULL, `photoPath` TEXT, `clientId` INTEGER, `note` TEXT NOT NULL, " +
-                        "`createdAt` INTEGER NOT NULL, FOREIGN KEY(`clientId`) REFERENCES `clients`(`id`) " +
-                        "ON UPDATE NO ACTION ON DELETE CASCADE )",
-                )
-                db.execSQL("CREATE INDEX IF NOT EXISTS `index_chip_scans_clientId` ON `chip_scans` (`clientId`)")
-            }
-        }
-
         @Volatile
         private var instance: AppDatabase? = null
 
+        /** Base nueva y cifrada. La anterior (sin cifrar, solo de pruebas) se elimina. */
+        private const val DB_NAME = "portaalerta_secure.db"
+
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
-                instance ?: Room.databaseBuilder(
-                    context.applicationContext,
-                    AppDatabase::class.java,
-                    "portaalerta.db",
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { instance = it }
+                instance ?: build(context.applicationContext).also { instance = it }
             }
+
+        private fun build(ctx: Context): AppDatabase {
+            System.loadLibrary("sqlcipher")
+            ctx.deleteDatabase("portaalerta.db")
+            // Si la clave se perdió, lo que hubiera en la base ya no se puede leer: se parte de cero.
+            val secret = SecureKeys.secret(ctx, "db") { ctx.deleteDatabase(DB_NAME) }
+            val passphrase = Base64.encodeToString(secret, Base64.NO_WRAP).toByteArray()
+            return Room.databaseBuilder(ctx, AppDatabase::class.java, DB_NAME)
+                .openHelperFactory(SupportOpenHelperFactory(passphrase))
+                .build()
+        }
     }
 }

@@ -113,8 +113,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 @Composable
 fun PhotoThumb(path: String?, size: Dp, modifier: Modifier = Modifier) {
+    val ctx = LocalContext.current
     val bmp by produceState<ImageBitmap?>(null, path) {
-        value = if (path == null) null else withContext(Dispatchers.IO) { PhotoStore.loadBitmap(path, 480)?.asImageBitmap() }
+        value = if (path == null) null else withContext(Dispatchers.IO) { PhotoStore.loadBitmap(ctx, path, 480)?.asImageBitmap() }
     }
     val shape = RoundedCornerShape(14.dp)
     Box(
@@ -134,7 +135,7 @@ private fun rememberGalleryPicker(vm: MainViewModel, replaceScreen: Boolean, cli
         if (uri != null) {
             scope.launch {
                 val file = withContext(Dispatchers.IO) { PhotoStore.copyToTemp(ctx, uri) }
-                val iccid = file?.let { ChipReader.readFile(it) }
+                val iccid = file?.let { ChipReader.readFile(ctx, it) }
                 if (file != null && iccid == null) {
                     Toast.makeText(ctx, "No pude leer el número. Puedes escribirlo a mano.", Toast.LENGTH_LONG).show()
                 }
@@ -285,7 +286,7 @@ fun ScannerScreen(vm: MainViewModel, clientId: Long?) {
     fun accept(iccid: String) {
         if (!handled.compareAndSet(false, true)) return
         message = "¡Leído! Guardando foto…"
-        val file = PhotoStore.newTempFile(ctx)
+        val file = PhotoStore.newRawFile(ctx)
         val cap = capture
         if (cap == null) {
             vm.replaceTop(Screen.ChipResult(null, null, iccid, clientId))
@@ -296,7 +297,9 @@ fun ScannerScreen(vm: MainViewModel, clientId: Long?) {
             ContextCompat.getMainExecutor(ctx),
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                    vm.replaceTop(Screen.ChipResult(null, file.path, iccid, clientId))
+                    // La foto cruda se cifra y se borra al instante.
+                    val sealed = PhotoStore.sealRaw(ctx, file)
+                    vm.replaceTop(Screen.ChipResult(null, sealed?.path, iccid, clientId))
                 }
 
                 override fun onError(exception: ImageCaptureException) {

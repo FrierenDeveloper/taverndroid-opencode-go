@@ -28,7 +28,8 @@ Requiere Android 8.0+ (API 26). En Android 13+ acepta el permiso de notificacion
 ## Seguridad y privacidad (versión 1.1)
 - **Sin internet**: el APK no declara el permiso `INTERNET` (el CI lo verifica en cada compilación).
 - **Notificaciones discretas** con el teléfono bloqueado (sin nombres de clientes).
-- **Fotos de chips** solo en la carpeta privada de la app; **ni fotos ni base de clientes** van al respaldo de Google.
+- **Cifrado**: la base de datos (SQLCipher) y cada foto (AES-256-GCM) se guardan cifradas; la clave vive en el Keystore de Android y no sale del teléfono. Sin respaldo de Android (`allowBackup=false`): nada va a Google Drive ni a Google Fotos.
+- **Fotos de chips** solo en la carpeta privada de la app, nunca en la galería.
 - Versión final no depurable. Para poder **actualizar sin desinstalar**, configura la llave fija (ver abajo).
 - Modo equipo con Firebase: preparado en `docs/EQUIPO_FIREBASE.md` y `firebase/firestore.rules`.
 

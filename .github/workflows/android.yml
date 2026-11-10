@@ -54,6 +54,9 @@ jobs:
               echo "::error::El APK declara el permiso INTERNET"; exit 1
             fi
           fi
+          if ! grep -q 'allowBackup="false"' "$f"; then
+            echo "::error::El respaldo de Android debe estar desactivado"; exit 1
+          fi
           if grep -q 'debuggable="true"' "$f"; then
             echo "::error::El APK de versión final es depurable"; exit 1
           fi
