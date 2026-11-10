@@ -49,7 +49,6 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -380,10 +379,6 @@ private fun SettingsTab(vm: MainViewModel, padding: PaddingValues) {
     var tplPort by remember { mutableStateOf(s.template(FollowupType.PORTABILITY)) }
     var tplIns by remember { mutableStateOf(s.template(FollowupType.INSURANCE)) }
     var goal by remember { mutableIntStateOf(s.monthlyGoal) }
-    var lock by remember { mutableStateOf(s.lockEnabled) }
-    val deviceSecure = remember {
-        (ctx.getSystemService(android.app.KeyguardManager::class.java))?.isDeviceSecure == true
-    }
     var saved by remember { mutableStateOf(false) }
 
     Column(
@@ -454,7 +449,6 @@ private fun SettingsTab(vm: MainViewModel, padding: PaddingValues) {
                 s.countryCode = cc
                 s.notifyHour = hour
                 s.monthlyGoal = goal
-                s.lockEnabled = lock
                 s.setMonths(FollowupType.PORTABILITY, portMonths)
                 s.setLeadDays(FollowupType.PORTABILITY, portLead)
                 s.setMonths(FollowupType.INSURANCE, insMonths)
@@ -469,19 +463,6 @@ private fun SettingsTab(vm: MainViewModel, padding: PaddingValues) {
 
         HorizontalDivider()
         Text("Privacidad", style = MaterialTheme.typography.titleSmall)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Bloquear la app con el PIN, patrón o huella del teléfono", Modifier.weight(1f))
-            Switch(checked = lock, onCheckedChange = { lock = it })
-        }
-        Text(
-            if (deviceSecure) {
-                "Se pide al abrir y después de 1 minuto fuera de la app. También oculta la app en recientes y bloquea las capturas de pantalla. Se aplica la próxima vez que abras la app."
-            } else {
-                "Tu teléfono no tiene bloqueo de pantalla. Configura un PIN o patrón en los ajustes del teléfono para que esta protección funcione."
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = if (deviceSecure) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
-        )
         OutlinedButton(onClick = { vm.push(Screen.Photos) }, modifier = Modifier.fillMaxWidth()) {
             Text("Fotos y chips guardados")
         }

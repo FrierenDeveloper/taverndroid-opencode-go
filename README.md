@@ -27,7 +27,6 @@ Requiere Android 8.0+ (API 26). En Android 13+ acepta el permiso de notificacion
 
 ## Seguridad y privacidad (versión 1.1)
 - **Sin internet**: el APK no declara el permiso `INTERNET` (el CI lo verifica en cada compilación).
-- **Bloqueo**: pide el PIN, patrón o huella del teléfono al abrir y tras 1 minuto fuera de la app; oculta la app en recientes y bloquea capturas.
 - **Notificaciones discretas** con el teléfono bloqueado (sin nombres de clientes).
 - **Fotos de chips** solo en la carpeta privada de la app; **ni fotos ni base de clientes** van al respaldo de Google.
 - Versión final no depurable. Para poder **actualizar sin desinstalar**, configura la llave fija (ver abajo).

@@ -62,9 +62,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     var purgePrompt by mutableStateOf<PurgePrompt?>(null)
 
-    /** true = se muestra la pantalla de bloqueo en vez de la app. */
-    var locked by mutableStateOf(true)
-
     // ---- navegación mínima (pila de pantallas) ----
     val stack = mutableStateListOf<Screen>(Screen.Home)
 

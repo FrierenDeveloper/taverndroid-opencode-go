@@ -36,11 +36,6 @@ class AppSettings(context: Context) {
         get() = str("cc", "56")
         set(v) = p.edit().putString("cc", v.filter { it.isDigit() }.ifEmpty { "56" }).apply()
 
-    /** Pide el PIN, patrón o huella del teléfono al abrir la app y tras 1 minuto fuera de ella. */
-    var lockEnabled: Boolean
-        get() = p.getBoolean("lock", true)
-        set(v) = p.edit().putBoolean("lock", v).apply()
-
     /** Hora del día (0-23) a la que suenan las alarmas. */
     var notifyHour: Int
         get() = p.getInt("hour", 9)
