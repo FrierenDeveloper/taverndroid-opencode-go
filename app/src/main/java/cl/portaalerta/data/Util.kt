@@ -40,6 +40,28 @@ object Contact {
         }
     }
 
+    /**
+     * Deja solo el número local mientras se escribe: acepta "+56 9 8123 4567", "56981234567" o "981234567".
+     * En Chile el celular local tiene 9 dígitos.
+     */
+    fun normalizeLocal(input: String, countryCode: String): String {
+        var d = input.filter { it.isDigit() }
+        val international = input.trim().startsWith("+")
+        if (d.startsWith(countryCode) && (international || d.length > 9)) d = d.removePrefix(countryCode)
+        return d.take(if (countryCode == "56") 9 else 15)
+    }
+
+    fun isCompleteLocal(digits: String, countryCode: String): Boolean =
+        if (countryCode == "56") digits.length == 9 else digits.length >= 8
+
+    /** +56 9 8123 4567 */
+    fun pretty(digits: String, countryCode: String): String =
+        if (countryCode == "56" && digits.length == 9) {
+            "+56 ${digits[0]} ${digits.substring(1, 5)} ${digits.substring(5)}"
+        } else {
+            "+$countryCode $digits"
+        }
+
     fun whatsappIntent(phone: String, message: String, countryCode: String): Intent {
         val number = waNumber(phone, countryCode)
         val uri = Uri.parse("https://wa.me/$number?text=${Uri.encode(message)}")
@@ -69,7 +91,7 @@ object Contact {
 
 object Templates {
     const val PLACEHOLDERS =
-        "{nombre} {nombre_completo} {vendedor} {tienda} {compania} {plan} {detalle} {fecha}"
+        "{nombre} {nombre_completo} {vendedor} {tienda} {compania} {detalle} {fecha}"
 
     fun render(template: String, client: Client, f: Followup?, s: AppSettings): String =
         template

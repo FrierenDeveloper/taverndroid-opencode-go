@@ -87,7 +87,9 @@ private fun ClientForm(vm: MainViewModel, initial: Client?) {
     var name by remember { mutableStateOf(initial?.name.orEmpty()) }
     var phone by remember { mutableStateOf(initial?.phone.orEmpty()) }
     var carrier by remember { mutableStateOf(initial?.currentCarrier.orEmpty()) }
-    var plan by remember { mutableStateOf(initial?.plan.orEmpty()) }
+    var otherCarrier by remember {
+        mutableStateOf(initial?.currentCarrier.orEmpty().isNotBlank() && Carriers.find(initial?.currentCarrier.orEmpty()) == null)
+    }
     var notes by remember { mutableStateOf(initial?.notes.orEmpty()) }
     val valid = name.isNotBlank() && phone.count { it.isDigit() } >= 8
 
@@ -115,14 +117,25 @@ private fun ClientForm(vm: MainViewModel, initial: Client?) {
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                 singleLine = true, modifier = Modifier.fillMaxWidth(),
             )
-            OutlinedTextField(
-                carrier, { carrier = it }, label = { Text("Compañía actual") },
-                singleLine = true, modifier = Modifier.fillMaxWidth(),
+            Text("Compañía actual", style = MaterialTheme.typography.titleSmall)
+            CarrierGrid(
+                selected = if (otherCarrier) Carriers.OTHER else carrier,
+                onPick = { picked ->
+                    if (picked == Carriers.OTHER) {
+                        otherCarrier = true
+                        if (Carriers.find(carrier) != null) carrier = ""
+                    } else {
+                        otherCarrier = false
+                        carrier = picked
+                    }
+                },
             )
-            OutlinedTextField(
-                plan, { plan = it }, label = { Text("Plan actual (opcional)") },
-                singleLine = true, modifier = Modifier.fillMaxWidth(),
-            )
+            if (otherCarrier) {
+                OutlinedTextField(
+                    carrier, { carrier = it }, label = { Text("Nombre de la compañía") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth(),
+                )
+            }
             OutlinedTextField(
                 notes, { notes = it }, label = { Text("Notas") },
                 minLines = 3, modifier = Modifier.fillMaxWidth(),
@@ -132,7 +145,7 @@ private fun ClientForm(vm: MainViewModel, initial: Client?) {
                 onClick = {
                     val c = (initial ?: Client(name = "", phone = "")).copy(
                         name = name.trim(), phone = phone.trim(), currentCarrier = carrier.trim(),
-                        plan = plan.trim(), notes = notes.trim(),
+                        notes = notes.trim(),
                     )
                     vm.saveClient(c) { savedId ->
                         if (initial == null) vm.replaceTop(Screen.ClientDetail(savedId)) else vm.pop()
@@ -192,8 +205,12 @@ fun ClientDetailScreen(vm: MainViewModel, id: Long) {
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(c.phone, style = MaterialTheme.typography.titleMedium)
-                        if (c.currentCarrier.isNotBlank()) Text("Compañía: ${c.currentCarrier}")
-                        if (c.plan.isNotBlank()) Text("Plan: ${c.plan}")
+                        if (c.currentCarrier.isNotBlank()) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                CarrierBadge(c.currentCarrier, 32.dp)
+                                Text(c.currentCarrier)
+                            }
+                        }
                         if (c.notes.isNotBlank()) Text(c.notes, style = MaterialTheme.typography.bodySmall)
                         Row(
                             Modifier.padding(top = 8.dp),

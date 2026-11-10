@@ -34,6 +34,7 @@ sealed interface Screen {
     data object Home : Screen
     data class ClientDetail(val id: Long) : Screen
     data class ClientEdit(val id: Long?) : Screen
+    data object NewClient : Screen
     data object Settings : Screen
     data class Scanner(val clientId: Long?) : Screen
     data object Photos : Screen
@@ -269,8 +270,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val byId = cs.associateBy { it.id }
         val sb = StringBuilder()
         sb.appendLine("CLIENTES")
-        sb.appendLine("nombre,telefono,compania,plan,notas")
-        cs.forEach { sb.appendLine(listOf(it.name, it.phone, it.currentCarrier, it.plan, it.notes).joinToString(",") { v -> esc(v) }) }
+        sb.appendLine("nombre,telefono,compania,notas")
+        cs.forEach { sb.appendLine(listOf(it.name, it.phone, it.currentCarrier, it.notes).joinToString(",") { v -> esc(v) }) }
         sb.appendLine()
         sb.appendLine("RECORDATORIOS")
         sb.appendLine("cliente,telefono,tipo,fecha_base,meses,vencimiento,aviso_dias_antes,estado,resultado,detalle")

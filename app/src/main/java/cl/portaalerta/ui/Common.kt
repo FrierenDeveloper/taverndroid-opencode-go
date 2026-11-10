@@ -82,6 +82,7 @@ fun AppRoot(vm: MainViewModel) {
                 Screen.Home -> HomeScreen(vm)
                 is Screen.ClientDetail -> ClientDetailScreen(vm, screen.id)
                 is Screen.ClientEdit -> ClientEditScreen(vm, screen.id)
+                Screen.NewClient -> NewClientScreen(vm)
                 is Screen.FollowupEdit -> FollowupEditScreen(vm, screen)
                 Screen.Settings -> SettingsScreen(vm)
                 Screen.Import -> ImportScreen(vm)
@@ -154,6 +155,10 @@ fun FollowupCard(
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                if (showClientName && client.currentCarrier.isNotBlank()) {
+                    CarrierBadge(client.currentCarrier, 28.dp)
+                    Spacer(Modifier.width(8.dp))
+                }
                 Text(
                     if (showClientName) client.name else f.type.label,
                     style = MaterialTheme.typography.titleMedium,

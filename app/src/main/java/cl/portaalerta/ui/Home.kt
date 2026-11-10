@@ -144,7 +144,7 @@ fun HomeScreen(vm: MainViewModel) {
         floatingActionButton = {
             when (tab) {
                 0, 1 -> ExtendedFloatingActionButton(
-                    onClick = { vm.push(Screen.ClientEdit(null)) },
+                    onClick = { vm.push(Screen.NewClient) },
                     icon = { Icon(Icons.Default.Add, contentDescription = null) },
                     text = { Text("Nuevo cliente") },
                     containerColor = MaterialTheme.colorScheme.primary,
@@ -284,6 +284,11 @@ private fun ClientsTab(vm: MainViewModel, padding: PaddingValues) {
             LazyColumn(contentPadding = PaddingValues(bottom = 96.dp)) {
                 items(filtered, key = { it.id }) { c ->
                     ListItem(
+                        leadingContent = if (c.currentCarrier.isNotBlank()) {
+                            { CarrierBadge(c.currentCarrier, 40.dp) }
+                        } else {
+                            null
+                        },
                         headlineContent = { Text(c.name) },
                         supportingContent = {
                             Text(listOf(c.phone, c.currentCarrier).filter { it.isNotBlank() }.joinToString(" · "))

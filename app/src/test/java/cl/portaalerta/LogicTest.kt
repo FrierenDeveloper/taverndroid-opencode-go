@@ -98,3 +98,23 @@ class IccidTest {
         assertEquals("8956 5260 1815 9083 015", cl.portaalerta.data.Iccid.pretty(ok19))
     }
 }
+
+class PhoneTest {
+    @Test
+    fun normalizesWhatWasTyped() {
+        assertEquals("981234567", Contact.normalizeLocal("+56 9 8123 4567", "56"))
+        assertEquals("981234567", Contact.normalizeLocal("56981234567", "56"))
+        assertEquals("981234567", Contact.normalizeLocal("981234567", "56"))
+        assertEquals("98123", Contact.normalizeLocal("9 8123", "56"))
+        assertEquals("981234567", Contact.normalizeLocal("9812345678999", "56"))
+    }
+
+    @Test
+    fun completeAndPretty() {
+        assertTrue(Contact.isCompleteLocal("981234567", "56"))
+        assertFalse(Contact.isCompleteLocal("98123456", "56"))
+        assertEquals("+56 9 8123 4567", Contact.pretty("981234567", "56"))
+        // el formato guardado se vuelve a leer bien para WhatsApp
+        assertEquals("56981234567", Contact.waNumber(Contact.pretty("981234567", "56"), "56"))
+    }
+}
