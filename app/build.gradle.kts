@@ -88,6 +88,7 @@ dependencies {
     implementation("androidx.sqlite:sqlite:2.4.0")
 
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20231013")
 }
 
 // Modo equipo (Firebase): el plugin solo se activa cuando existe el archivo de configuración.

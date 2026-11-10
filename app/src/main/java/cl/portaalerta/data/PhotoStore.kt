@@ -50,6 +50,15 @@ object PhotoStore {
         }
     }
 
+    /** Guarda directamente una foto (JPEG) ya en su lugar definitivo, cifrada. Se usa al restaurar un respaldo. */
+    fun saveFinal(ctx: Context, jpeg: ByteArray): String? = try {
+        val dest = File(dir(ctx), "chip_${System.nanoTime()}.enc")
+        dest.writeBytes(PhotoCrypto.encrypt(key(ctx), jpeg))
+        dest.path
+    } catch (e: Exception) {
+        null
+    }
+
     /** Mueve una foto temporal a su lugar definitivo y devuelve la ruta nueva. */
     fun promote(ctx: Context, tmp: File): String {
         val dest = File(dir(ctx), "chip_${System.currentTimeMillis()}.enc")

@@ -1,6 +1,7 @@
 package cl.portaalerta
 
 import android.app.Application
+import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -11,6 +12,10 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import cl.portaalerta.data.AppDatabase
 import cl.portaalerta.data.AppSettings
+import cl.portaalerta.data.BackupBundle
+import cl.portaalerta.data.BackupCodec
+import cl.portaalerta.data.BackupCrypto
+import cl.portaalerta.data.Contact
 import cl.portaalerta.data.ChipScan
 import cl.portaalerta.data.PhotoStore
 import cl.portaalerta.data.Client
@@ -262,6 +267,70 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun rescheduleAll() {
         viewModelScope.launch { Scheduler.rescheduleAll(ctx) }
     }
+
+    data class ImportResult(val clients: Int, val skipped: Int, val followups: Int, val chips: Int)
+
+    /** Guarda un respaldo cifrado con la contraseña elegida en el archivo [uri]. Devuelve cuántos clientes incluye. */
+    suspend fun exportBackup(uri: Uri, password: CharArray, includePhotos: Boolean): Result<Int> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val clients = dao.clientsNow()
+                val followups = dao.allFollowups()
+                val scans = dao.scansAll()
+                val photos = HashMap<Long, ByteArray>()
+                if (includePhotos) {
+                    for (s in scans) {
+                        val path = s.photoPath ?: continue
+                        val bmp = PhotoStore.loadBitmap(ctx, path, 1280) ?: continue
+                        val out = java.io.ByteArrayOutputStream()
+                        bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, out)
+                        photos[s.id] = out.toByteArray()
+                    }
+                }
+                val payload = BackupCodec.encode(BackupBundle(clients, followups, scans, photos))
+                val file = BackupCrypto.seal(password, payload)
+                val stream = ctx.contentResolver.openOutputStream(uri, "w") ?: error("No se pudo crear el archivo")
+                stream.use { it.write(file) }
+                clients.size
+            }
+        }
+
+    /** Restaura un respaldo. Los clientes cuyo teléfono ya existe se omiten (no se duplican). */
+    suspend fun importBackup(uri: Uri, password: CharArray): Result<ImportResult> =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val file = ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: error("No se pudo leer el archivo")
+                val bundle = BackupCodec.decode(BackupCrypto.open(password, file))
+                val cc = settings.countryCode
+                val known = dao.clientsNow().map { Contact.waNumber(it.phone, cc) }.toMutableSet()
+                val idMap = HashMap<Long, Long>()
+                var skipped = 0
+                for (c in bundle.clients) {
+                    val key = Contact.waNumber(c.phone, cc)
+                    if (key in known) {
+                        skipped++
+                        continue
+                    }
+                    idMap[c.id] = dao.insertClient(c.copy(id = 0))
+                    known += key
+                }
+                var nf = 0
+                for (f in bundle.followups) {
+                    val cid = idMap[f.clientId] ?: continue
+                    val id = dao.insertFollowup(f.copy(id = 0, clientId = cid))
+                    nf++
+                    if (f.status == FollowupStatus.OPEN) Scheduler.schedule(ctx, f.copy(id = id, clientId = cid))
+                }
+                var nc = 0
+                for (s in bundle.scans) {
+                    val cid: Long? = if (s.clientId == null) null else (idMap[s.clientId] ?: continue)
+                    val path = bundle.photos[s.id]?.let { PhotoStore.saveFinal(ctx, it) }
+                    dao.insertScan(s.copy(id = 0, clientId = cid, photoPath = path))
+                    nc++
+                }
+                ImportResult(idMap.size, skipped, nf, nc)
+            }
+        }
 
     /** Respaldo en CSV (clientes + recordatorios) para compartir por WhatsApp/correo. */
     suspend fun exportCsv(): String {

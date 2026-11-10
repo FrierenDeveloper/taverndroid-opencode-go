@@ -141,6 +141,9 @@ interface AppDao {
     @Query("SELECT * FROM chip_scans ORDER BY createdAt DESC")
     fun scansFlow(): Flow<List<ChipScan>>
 
+    @Query("SELECT * FROM chip_scans")
+    suspend fun scansAll(): List<ChipScan>
+
     @Query("SELECT * FROM chip_scans WHERE clientId = :clientId ORDER BY createdAt DESC")
     fun scansFor(clientId: Long): Flow<List<ChipScan>>
 

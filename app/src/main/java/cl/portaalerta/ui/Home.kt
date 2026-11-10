@@ -474,6 +474,12 @@ private fun SettingsTab(vm: MainViewModel, padding: PaddingValues) {
 
         HorizontalDivider()
         Text("Respaldo", style = MaterialTheme.typography.titleSmall)
+        EncryptedBackupSection(vm)
+        Text(
+            "El CSV no va cifrado: cualquiera que lo reciba puede leer todos tus clientes. Úsalo solo para Excel.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         OutlinedButton(
             onClick = {
                 scope.launch {
@@ -488,7 +494,7 @@ private fun SettingsTab(vm: MainViewModel, padding: PaddingValues) {
             modifier = Modifier.fillMaxWidth(),
         ) {
             Icon(Icons.Default.Share, contentDescription = null)
-            Text("  Exportar clientes y recordatorios (CSV)")
+            Text("  Exportar CSV (sin cifrar)")
         }
         Spacer(Modifier.height(80.dp))
     }
