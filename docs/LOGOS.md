@@ -1,21 +1,25 @@
 # Logos de las compañías
 
-La app muestra una insignia de color para cada compañía. Para usar el **logo oficial**, copia la imagen
-a `app/src/main/res/drawable-nodpi/` con este nombre y la app la usa sola (no hay que tocar código):
+La app muestra el **logo oficial** de cada compañía cuando existe el archivo `logo_<clave>.png` en
+`app/src/main/res/drawable-nodpi/`. Si no existe, muestra una insignia de color con el nombre.
 
-| Compañía | Archivo |
-|---|---|
-| Entel | `logo_entel.png` |
-| Movistar | `logo_movistar.png` |
-| Claro | `logo_claro.png` |
-| WOM | `logo_wom.png` |
-| Virgin | `logo_virgin.png` |
-| Mundo | `logo_mundo.png` |
-| VTR | `logo_vtr.png` |
-| Simple | `logo_simple.png` |
+| Compañía | Archivo | Estado |
+|---|---|---|
+| Entel | `logo_entel.png` | incluido |
+| Movistar | `logo_movistar.png` | incluido |
+| Claro | `logo_claro.png` | incluido |
+| WOM | `logo_wom.png` | incluido |
+| VTR | `logo_vtr.png` | incluido (solo el símbolo, sin el texto "vtr.com") |
+| GTD | `logo_gtd.png` | incluido |
+| Virgin | `logo_virgin.png` | pendiente (insignia de color) |
+| Mundo | `logo_mundo.png` | pendiente (insignia de color) |
+| Simple | `logo_simple.png` | pendiente (insignia de color) |
 
-Recomendaciones:
-- PNG (o WebP) **cuadrado, 512×512 px**, con el logo centrado y fondo transparente o blanco. La app lo muestra sobre un fondo blanco con margen y sin recortarlo.
-- Nombres en minúsculas, sin espacios ni tildes (regla de Android para recursos).
-- Usa los archivos oficiales de cada compañía (kit de marca o prensa). Los logos son marcas registradas y suelen cambiar; no los descargues de sitios no oficiales.
-- Para una compañía nueva, agrega su nombre y clave en `Carriers.all` (`ui/Carriers.kt`) y su `logo_<clave>.png`.
+Cómo se prepararon: cada logo se centra en un lienzo cuadrado de 512×512 px, con fondo transparente y sin deformarlo.
+La app lo muestra sobre un cuadrado blanco redondeado, con margen.
+
+Para agregar o reemplazar uno:
+- PNG (o WebP) cuadrado de 512×512 px, logo centrado, fondo transparente o blanco.
+- Nombre en minúsculas, sin espacios ni tildes.
+- Usa archivos oficiales de cada compañía (kit de marca o prensa). Los logos son marcas registradas y suelen cambiar.
+- Para una compañía nueva, agrega su nombre y clave en `Carriers.all` (`ui/Carriers.kt`).

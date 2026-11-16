@@ -35,8 +35,8 @@ import androidx.compose.ui.unit.sp
 data class Carrier(val key: String, val name: String, val color: Color, val textColor: Color = Color.White)
 
 /**
- * Compañías móviles de Chile. Las 4 con red propia (Entel, Movistar, Claro, WOM) más las virtuales más comunes.
- * Cualquier otra se escribe con "Otra".
+ * Compañías móviles de Chile. Las 4 con red propia (Entel, Movistar, Claro, WOM) más las virtuales más comunes
+ * (y GTD). Cualquier otra se escribe con "Otra".
  *
  * LOGOS: cada insignia usa los colores de la marca como base. Para poner el logo oficial, copia la imagen
  * como app/src/main/res/drawable-nodpi/logo_<clave>.png (por ejemplo logo_entel.png) y la app la usa sola.
@@ -53,6 +53,7 @@ object Carriers {
         Carrier("mundo", "Mundo", Color(0xFF00897B)),
         Carrier("vtr", "VTR", Color(0xFFFFC72C), textColor = Color(0xFF1E1530)),
         Carrier("simple", "Simple", Color(0xFF3949AB)),
+        Carrier("gtd", "GTD", Color(0xFF43649C)),
     )
 
     fun find(name: String): Carrier? = all.firstOrNull { it.name.equals(name.trim(), ignoreCase = true) }
