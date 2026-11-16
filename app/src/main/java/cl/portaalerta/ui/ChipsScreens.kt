@@ -111,11 +111,18 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 // ---------------------------------------------------------------- piezas comunes
 
+private val thumbCache = android.util.LruCache<String, ImageBitmap>(24)
+
 @Composable
 fun PhotoThumb(path: String?, size: Dp, modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
-    val bmp by produceState<ImageBitmap?>(null, path) {
-        value = if (path == null) null else withContext(Dispatchers.IO) { PhotoStore.loadBitmap(ctx, path, 480)?.asImageBitmap() }
+    val bmp by produceState<ImageBitmap?>(path?.let { thumbCache.get(it) }, path) {
+        value = if (path == null) {
+            null
+        } else {
+            thumbCache.get(path) ?: withContext(Dispatchers.IO) { PhotoStore.loadBitmap(ctx, path, 480)?.asImageBitmap() }
+                ?.also { thumbCache.put(path, it) }
+        }
     }
     val shape = RoundedCornerShape(14.dp)
     Box(

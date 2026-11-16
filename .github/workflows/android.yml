@@ -72,3 +72,43 @@ jobs:
         with:
           name: PortaAlerta-apk
           path: app/build/outputs/apk/release/app-release.apk
+
+  # Capturas REALES de las pantallas (se renderiza el código de la app). Solo corre si el commit lleva [capturas]
+  # o se lanza a mano. Publica las imágenes en la rama "capturas".
+  screens:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[capturas]')
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Capturas reales de las pantallas
+        run: ./gradlew --no-daemon -Pscreens recordRoborazziDebug
+      - name: Capturas generadas
+        if: always()
+        run: ls -la app/build/screens || true
+      - name: Publicar en la rama capturas
+        id: push
+        continue-on-error: true
+        run: |
+          set -e
+          mkdir -p "$RUNNER_TEMP/shots"
+          cp app/build/screens/*.png "$RUNNER_TEMP/shots/"
+          git config user.name "ci"
+          git config user.email "ci@users.noreply.github.com"
+          git checkout --orphan capturas
+          git rm -rf . > /dev/null
+          cp "$RUNNER_TEMP"/shots/*.png .
+          git add ./*.png
+          git commit -m "Capturas del flujo de alta ($GITHUB_SHA)"
+          git push -f origin capturas
+      - name: Plan B, volcar las imágenes en el log
+        if: steps.push.outcome == 'failure'
+        run: |
+          for f in app/build/screens/*.png; do echo "=== $f"; base64 -w 120 "$f"; echo "=== fin"; done

@@ -33,6 +33,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -82,7 +83,7 @@ fun AppRoot(vm: MainViewModel) {
                 Screen.Home -> HomeScreen(vm)
                 is Screen.ClientDetail -> ClientDetailScreen(vm, screen.id)
                 is Screen.ClientEdit -> ClientEditScreen(vm, screen.id)
-                Screen.NewClient -> NewClientScreen(vm)
+                Screen.NewClient -> NewClientScreen(remember { VmNewClientHost(vm) })
                 is Screen.FollowupEdit -> FollowupEditScreen(vm, screen)
                 Screen.Settings -> SettingsScreen(vm)
                 Screen.Import -> ImportScreen(vm)

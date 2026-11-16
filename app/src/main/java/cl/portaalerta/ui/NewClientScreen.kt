@@ -63,9 +63,67 @@ import cl.portaalerta.data.Contact
 import cl.portaalerta.data.Dates
 import cl.portaalerta.data.Followup
 import cl.portaalerta.data.FollowupType
+import kotlinx.coroutines.flow.StateFlow
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+
+/** Valores con los que arranca el formulario (por defecto, vacío). Sirve también para las capturas de prueba. */
+data class NewClientInitial(
+    val step: Int = 0,
+    val name: String = "",
+    val digits: String = "",
+    val carrier: String = "",
+    val otherMode: Boolean = false,
+    val fromContract: Boolean = false,
+    val pickedEpoch: Long = -1L,
+)
+
+/** Fecha de portabilidad elegida en el paso 3. */
+data class FollowupDraft(val base: Long, val due: Long, val months: Int, val leadDays: Int)
+
+/** Lo que el alta de cliente necesita del resto de la app. */
+interface NewClientHost {
+    val countryCode: String
+    val months: Int
+    val defaultLeadDays: Int
+    val clients: StateFlow<List<Client>>
+    fun save(client: Client, followup: FollowupDraft?, thenScanChip: Boolean)
+    fun openClient(id: Long)
+    fun back()
+}
+
+class VmNewClientHost(private val vm: MainViewModel) : NewClientHost {
+    override val countryCode get() = vm.settings.countryCode
+    override val months get() = vm.settings.months(FollowupType.PORTABILITY)
+    override val defaultLeadDays get() = vm.settings.leadDays(FollowupType.PORTABILITY)
+    override val clients get() = vm.clients
+
+    override fun save(client: Client, followup: FollowupDraft?, thenScanChip: Boolean) {
+        vm.saveClient(client) { clientId ->
+            fun finish() {
+                vm.replaceTop(Screen.ClientDetail(clientId))
+                if (thenScanChip) vm.push(Screen.Scanner(clientId))
+            }
+            if (followup != null) {
+                val f = Followup(
+                    clientId = clientId,
+                    type = FollowupType.PORTABILITY,
+                    baseDate = followup.base,
+                    months = followup.months,
+                    dueDate = followup.due,
+                    leadDays = followup.leadDays,
+                )
+                vm.saveFollowup(f) { finish() }
+            } else {
+                finish()
+            }
+        }
+    }
+
+    override fun openClient(id: Long) = vm.replaceTop(Screen.ClientDetail(id))
+    override fun back() = vm.pop()
+}
 
 /** Muestra 981234567 como "9 8123 4567" sin cambiar lo que se guarda. */
 private class ChilePhoneFormat : VisualTransformation {
@@ -101,20 +159,19 @@ private class ChilePhoneFormat : VisualTransformation {
  * Al guardar queda creado el cliente y programada la alarma.
  */
 @Composable
-fun NewClientScreen(vm: MainViewModel) {
-    val settings = vm.settings
-    val cc = settings.countryCode
-    val clients by vm.clients.collectAsState()
-    val months = settings.months(FollowupType.PORTABILITY)
+fun NewClientScreen(host: NewClientHost, initial: NewClientInitial = NewClientInitial()) {
+    val cc = host.countryCode
+    val clients by host.clients.collectAsState()
+    val months = host.months
 
-    var step by rememberSaveable { mutableIntStateOf(0) }
-    var name by rememberSaveable { mutableStateOf("") }
-    var digits by rememberSaveable { mutableStateOf("") }
-    var carrier by rememberSaveable { mutableStateOf("") }
-    var otherMode by rememberSaveable { mutableStateOf(false) }
-    var fromContract by rememberSaveable { mutableStateOf(false) }
-    var pickedEpoch by rememberSaveable { mutableStateOf(-1L) }
-    var lead by rememberSaveable { mutableIntStateOf(settings.leadDays(FollowupType.PORTABILITY)) }
+    var step by rememberSaveable { mutableIntStateOf(initial.step) }
+    var name by rememberSaveable { mutableStateOf(initial.name) }
+    var digits by rememberSaveable { mutableStateOf(initial.digits) }
+    var carrier by rememberSaveable { mutableStateOf(initial.carrier) }
+    var otherMode by rememberSaveable { mutableStateOf(initial.otherMode) }
+    var fromContract by rememberSaveable { mutableStateOf(initial.fromContract) }
+    var pickedEpoch by rememberSaveable { mutableStateOf(initial.pickedEpoch) }
+    var lead by rememberSaveable { mutableIntStateOf(host.defaultLeadDays) }
     var showPicker by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
 
@@ -137,25 +194,12 @@ fun NewClientScreen(vm: MainViewModel) {
         if (saving) return
         saving = true
         val client = Client(name = name.trim(), phone = Contact.pretty(digits, cc), currentCarrier = carrier.trim())
-        vm.saveClient(client) { clientId ->
-            fun finish() {
-                vm.replaceTop(Screen.ClientDetail(clientId))
-                if (thenScanChip) vm.push(Screen.Scanner(clientId))
-            }
-            if (withDate && due != null && base != null) {
-                val f = Followup(
-                    clientId = clientId,
-                    type = FollowupType.PORTABILITY,
-                    baseDate = base.toEpochDay(),
-                    months = months,
-                    dueDate = due.toEpochDay(),
-                    leadDays = lead,
-                )
-                vm.saveFollowup(f) { finish() }
-            } else {
-                finish()
-            }
+        val draft = if (withDate && due != null && base != null) {
+            FollowupDraft(base = base.toEpochDay(), due = due.toEpochDay(), months = months, leadDays = lead)
+        } else {
+            null
         }
+        host.save(client, draft, thenScanChip)
     }
 
     Scaffold(
@@ -165,7 +209,7 @@ fun NewClientScreen(vm: MainViewModel) {
                     colors = appBarColors(),
                     title = { Text("Nuevo cliente") },
                     navigationIcon = {
-                        IconButton(onClick = { if (step > 0) step -= 1 else vm.pop() }) {
+                        IconButton(onClick = { if (step > 0) step -= 1 else host.back() }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
                         }
                     },
@@ -264,7 +308,7 @@ fun NewClientScreen(vm: MainViewModel) {
                             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Text("Este número ya está guardado", style = MaterialTheme.typography.titleSmall)
                                 Text("${d.name} · ${d.phone}")
-                                TextButton(onClick = { vm.replaceTop(Screen.ClientDetail(d.id)) }) { Text("Abrir su ficha") }
+                                TextButton(onClick = { host.openClient(d.id) }) { Text("Abrir su ficha") }
                             }
                         }
                     }

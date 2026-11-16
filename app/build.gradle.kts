@@ -3,6 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
+    id("io.github.takahirom.roborazzi")
 }
 
 android {
@@ -51,6 +52,9 @@ android {
     buildFeatures {
         compose = true
     }
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
     lint {
         abortOnError = false
         textReport = true
@@ -89,9 +93,23 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20231013")
+
+    // Capturas reales de las pantallas con Robolectric + Roborazzi (se ejecutan solo con -Pscreens)
+    testImplementation("org.robolectric:robolectric:4.13")
+    testImplementation("androidx.test:core:1.6.1")
+    testImplementation("androidx.compose.ui:ui-test-junit4")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.26.0")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.26.0")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi-junit-rule:1.26.0")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
 
 // Modo equipo (Firebase): el plugin solo se activa cuando existe el archivo de configuración.
 if (file("google-services.json").exists()) {
     apply(plugin = "com.google.gms.google-services")
+}
+
+// Las pruebas de capturas son lentas: solo corren cuando se pide con -Pscreens.
+tasks.withType<Test>().configureEach {
+    if (!project.hasProperty("screens")) exclude("**/screens/**")
 }
