@@ -25,7 +25,7 @@ import java.time.LocalDate
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [34], qualifiers = "w390dp-h844dp-xxhdpi-notnight")
+@Config(sdk = [34], qualifiers = "w390dp-h844dp-notnight-xxhdpi")
 class FlujoAltaScreens {
     @get:Rule
     val compose = createComposeRule()
