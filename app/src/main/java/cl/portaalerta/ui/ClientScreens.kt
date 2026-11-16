@@ -315,6 +315,10 @@ fun ClientDetailScreen(vm: MainViewModel, id: Long) {
             doneTarget?.let { vm.markDone(it, outcome) }
             doneTarget = null
         },
+        onRetry = { days ->
+            doneTarget?.let { vm.retryLater(it, days) }
+            doneTarget = null
+        },
         onDismiss = { doneTarget = null },
     )
     if (confirmPurge) {

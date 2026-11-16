@@ -19,6 +19,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -41,10 +42,8 @@ import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,6 +56,9 @@ import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import cl.portaalerta.MainViewModel
+import cl.portaalerta.data.Iccid
+import cl.portaalerta.data.ChipScan
+import cl.portaalerta.NewClientDraft
 import cl.portaalerta.Screen
 import cl.portaalerta.data.Client
 import cl.portaalerta.data.Contact
@@ -68,42 +70,37 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 
-/** Valores con los que arranca el formulario (por defecto, vacío). Sirve también para las capturas de prueba. */
-data class NewClientInitial(
-    val step: Int = 0,
-    val name: String = "",
-    val digits: String = "",
-    val carrier: String = "",
-    val otherMode: Boolean = false,
-    val fromContract: Boolean = false,
-    val pickedEpoch: Long = -1L,
-)
-
 /** Fecha de portabilidad elegida en el paso 3. */
 data class FollowupDraft(val base: Long, val due: Long, val months: Int, val leadDays: Int)
+
+/** Chip leído en el paso 4 (la foto, si existe, ya está cifrada). */
+data class ChipDraft(val iccid: String, val tempPath: String?)
 
 /** Lo que el alta de cliente necesita del resto de la app. */
 interface NewClientHost {
     val countryCode: String
     val months: Int
-    val defaultLeadDays: Int
+    val draft: NewClientDraft
     val clients: StateFlow<List<Client>>
-    fun save(client: Client, followup: FollowupDraft?, thenScanChip: Boolean)
+    fun save(client: Client, followup: FollowupDraft?, chip: ChipDraft?)
+    fun scanChip()
     fun openClient(id: Long)
-    fun back()
+
+    /** Sale del asistente descartando lo escrito. */
+    fun exit()
 }
 
 class VmNewClientHost(private val vm: MainViewModel) : NewClientHost {
     override val countryCode get() = vm.settings.countryCode
     override val months get() = vm.settings.months(FollowupType.PORTABILITY)
-    override val defaultLeadDays get() = vm.settings.leadDays(FollowupType.PORTABILITY)
+    override val draft get() = vm.newClientDraft
     override val clients get() = vm.clients
 
-    override fun save(client: Client, followup: FollowupDraft?, thenScanChip: Boolean) {
+    override fun save(client: Client, followup: FollowupDraft?, chip: ChipDraft?) {
         vm.saveClient(client) { clientId ->
             fun finish() {
-                vm.replaceTop(Screen.ClientDetail(clientId))
-                if (thenScanChip) vm.push(Screen.Scanner(clientId))
+                chip?.let { vm.saveScan(ChipScan(iccid = it.iccid, clientId = clientId), it.tempPath) { } }
+                vm.finishNewClient(clientId)
             }
             if (followup != null) {
                 val f = Followup(
@@ -121,8 +118,9 @@ class VmNewClientHost(private val vm: MainViewModel) : NewClientHost {
         }
     }
 
+    override fun scanChip() = vm.push(Screen.Scanner(clientId = null, forDraft = true))
     override fun openClient(id: Long) = vm.replaceTop(Screen.ClientDetail(id))
-    override fun back() = vm.pop()
+    override fun exit() = vm.discardNewClient()
 }
 
 /** Muestra 981234567 como "9 8123 4567" sin cambiar lo que se guarda. */
@@ -154,52 +152,54 @@ private class ChilePhoneFormat : VisualTransformation {
 }
 
 /**
- * Alta de cliente en 3 pasos pensada para el mostrador:
- * 1) nombre y teléfono juntos, 2) compañía con un toque, 3) fecha en que puede portarse.
- * Al guardar queda creado el cliente y programada la alarma.
+ * Alta de cliente en 4 pasos pensada para el mostrador:
+ * 1) nombre y teléfono, 2) compañía con un toque, 3) fecha en que puede portarse, 4) chip (opcional) y guardar.
+ *
+ * LA FECHA DEL PASO 3 es el día en que el cliente PUEDE PORTARSE: no se le suman meses.
+ * Solo si no se sabe, se puede elegir "calcular desde que contrató" y entonces se suma el plazo (4 meses).
  */
 @Composable
-fun NewClientScreen(host: NewClientHost, initial: NewClientInitial = NewClientInitial()) {
+fun NewClientScreen(host: NewClientHost) {
     val cc = host.countryCode
     val clients by host.clients.collectAsState()
     val months = host.months
+    val d = host.draft
 
-    var step by rememberSaveable { mutableIntStateOf(initial.step) }
-    var name by rememberSaveable { mutableStateOf(initial.name) }
-    var digits by rememberSaveable { mutableStateOf(initial.digits) }
-    var carrier by rememberSaveable { mutableStateOf(initial.carrier) }
-    var otherMode by rememberSaveable { mutableStateOf(initial.otherMode) }
-    var fromContract by rememberSaveable { mutableStateOf(initial.fromContract) }
-    var pickedEpoch by rememberSaveable { mutableStateOf(initial.pickedEpoch) }
-    var lead by rememberSaveable { mutableIntStateOf(host.defaultLeadDays) }
     var showPicker by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
+    var confirmExit by remember { mutableStateOf(false) }
 
-    BackHandler(enabled = step > 0) { step -= 1 }
+    val step = d.step
+    val totalSteps = 4
+    fun goBack() {
+        if (d.step > 0) d.step -= 1 else if (d.hasData || d.chipIccid.isNotEmpty()) confirmExit = true else host.exit()
+    }
+    BackHandler { goBack() }
 
     val today = LocalDate.now()
-    val picked: LocalDate? = if (pickedEpoch >= 0) LocalDate.ofEpochDay(pickedEpoch) else null
-    val due: LocalDate? = picked?.let { if (fromContract) it.plusMonths(months.toLong()) else it }
-    val base: LocalDate? = picked?.let { if (fromContract) it else it.minusMonths(months.toLong()) }
+    val picked: LocalDate? = if (d.pickedEpoch >= 0) LocalDate.ofEpochDay(d.pickedEpoch) else null
+    val due: LocalDate? = picked?.let { if (d.fromContract) it.plusMonths(months.toLong()) else it }
+    val base: LocalDate? = picked?.let { if (d.fromContract) it else it.minusMonths(months.toLong()) }
 
-    val phoneOk = Contact.isCompleteLocal(digits, cc)
+    val phoneOk = Contact.isCompleteLocal(d.digits, cc)
     val duplicate: Client? = if (phoneOk) {
-        val key = Contact.waNumber(digits, cc)
+        val key = Contact.waNumber(d.digits, cc)
         clients.firstOrNull { Contact.waNumber(it.phone, cc) == key }
     } else {
         null
     }
 
-    fun save(withDate: Boolean, thenScanChip: Boolean) {
+    fun save() {
         if (saving) return
         saving = true
-        val client = Client(name = name.trim(), phone = Contact.pretty(digits, cc), currentCarrier = carrier.trim())
-        val draft = if (withDate && due != null && base != null) {
-            FollowupDraft(base = base.toEpochDay(), due = due.toEpochDay(), months = months, leadDays = lead)
+        val client = Client(name = d.name.trim(), phone = Contact.pretty(d.digits, cc), currentCarrier = d.carrier.trim())
+        val followup = if (due != null && base != null) {
+            FollowupDraft(base = base.toEpochDay(), due = due.toEpochDay(), months = months, leadDays = d.leadDays)
         } else {
             null
         }
-        host.save(client, draft, thenScanChip)
+        val chip = if (d.chipIccid.isNotBlank()) ChipDraft(d.chipIccid, d.chipPath) else null
+        host.save(client, followup, chip)
     }
 
     Scaffold(
@@ -209,13 +209,13 @@ fun NewClientScreen(host: NewClientHost, initial: NewClientInitial = NewClientIn
                     colors = appBarColors(),
                     title = { Text("Nuevo cliente") },
                     navigationIcon = {
-                        IconButton(onClick = { if (step > 0) step -= 1 else host.back() }) {
+                        IconButton(onClick = { goBack() }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
                         }
                     },
                 )
                 LinearProgressIndicator(
-                    progress = { (step + 1) / 3f },
+                    progress = { (step + 1) / totalSteps.toFloat() },
                     modifier = Modifier.fillMaxWidth(),
                     color = MaterialTheme.colorScheme.secondary,
                     trackColor = MaterialTheme.colorScheme.outlineVariant,
@@ -229,38 +229,37 @@ fun NewClientScreen(host: NewClientHost, initial: NewClientInitial = NewClientIn
             ) {
                 when (step) {
                     0 -> Button(
-                        onClick = { step = 1 },
-                        enabled = name.isNotBlank() && phoneOk,
+                        onClick = { d.step = 1 },
+                        enabled = d.name.isNotBlank() && phoneOk,
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("Siguiente") }
-                    1 -> if (otherMode) {
+                    1 -> if (d.otherMode) {
                         Button(
-                            onClick = { step = 2 },
-                            enabled = carrier.isNotBlank(),
+                            onClick = { d.step = 2 },
+                            enabled = d.carrier.isNotBlank(),
                             modifier = Modifier.fillMaxWidth(),
                         ) { Text("Siguiente") }
                     } else {
-                        TextButton(onClick = { carrier = ""; step = 2 }, modifier = Modifier.fillMaxWidth()) {
+                        TextButton(onClick = { d.carrier = ""; d.step = 2 }, modifier = Modifier.fillMaxWidth()) {
                             Text("No sé la compañía, saltar")
                         }
                     }
-                    else -> {
+                    2 -> {
                         Button(
-                            onClick = { save(withDate = true, thenScanChip = false) },
-                            enabled = due != null && !saving,
+                            onClick = { d.step = 3 },
+                            enabled = due != null,
                             modifier = Modifier.fillMaxWidth(),
-                        ) { Text("Guardar y programar alarma") }
-                        OutlinedButton(
-                            onClick = { save(withDate = true, thenScanChip = true) },
-                            enabled = due != null && !saving,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text("Guardar y leer chip") }
+                        ) { Text("Siguiente") }
                         TextButton(
-                            onClick = { save(withDate = false, thenScanChip = false) },
-                            enabled = !saving,
+                            onClick = { d.pickedEpoch = -1L; d.step = 3 },
                             modifier = Modifier.fillMaxWidth(),
-                        ) { Text("Guardar sin fecha por ahora") }
+                        ) { Text("Sin fecha por ahora") }
                     }
+                    else -> Button(
+                        onClick = { save() },
+                        enabled = !saving,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(if (due != null) "Guardar y programar alarma" else "Guardar cliente") }
                 }
             }
         },
@@ -272,67 +271,73 @@ fun NewClientScreen(host: NewClientHost, initial: NewClientInitial = NewClientIn
         ) {
             when (step) {
                 0 -> {
-                    StepTitle("1 de 3", "¿Quién es el cliente?")
+                    StepTitle("1 de $totalSteps", "¿Quién es el cliente?")
                     OutlinedTextField(
-                        value = name,
-                        onValueChange = { name = it },
+                        value = d.name,
+                        onValueChange = { d.name = it },
                         label = { Text("Nombre") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
                         modifier = Modifier.fillMaxWidth(),
                     )
                     OutlinedTextField(
-                        value = digits,
-                        onValueChange = { digits = Contact.normalizeLocal(it, cc) },
+                        value = d.digits,
+                        onValueChange = { d.digits = Contact.normalizeLocal(it, cc) },
                         label = { Text("Teléfono / WhatsApp") },
                         prefix = { Text("+$cc ") },
                         placeholder = { Text("9 1234 5678") },
                         supportingText = {
                             Text(
                                 when {
-                                    digits.isEmpty() -> "Solo el número, sin el +$cc"
-                                    !phoneOk -> "Faltan dígitos (${digits.length} de 9)"
-                                    digits.first() != '9' && cc == "56" -> "No parece celular: WhatsApp no lo abrirá"
+                                    d.digits.isEmpty() -> "Solo el número, sin el +$cc"
+                                    !phoneOk -> "Faltan dígitos (${d.digits.length} de 9)"
+                                    d.digits.first() != '9' && cc == "56" -> "No parece celular: WhatsApp no lo abrirá"
                                     else -> "Número completo ✓"
                                 },
                             )
                         },
-                        isError = digits.isNotEmpty() && phoneOk && cc == "56" && digits.first() != '9',
+                        isError = d.digits.isNotEmpty() && phoneOk && cc == "56" && d.digits.first() != '9',
                         visualTransformation = if (cc == "56") ChilePhoneFormat() else VisualTransformation.None,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
-                    duplicate?.let { d ->
-                        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer)) {
-                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    duplicate?.let { dup ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                            ),
+                        ) {
+                            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Text("Este número ya está guardado", style = MaterialTheme.typography.titleSmall)
-                                Text("${d.name} · ${d.phone}")
-                                TextButton(onClick = { host.openClient(d.id) }) { Text("Abrir su ficha") }
+                                Text("${dup.name} · ${dup.phone}")
+                                TextButton(onClick = { host.openClient(dup.id) }) { Text("Abrir su ficha") }
                             }
                         }
                     }
                 }
 
                 1 -> {
-                    StepTitle("2 de 3", "¿De qué compañía viene?")
+                    StepTitle("2 de $totalSteps", "¿De qué compañía viene?")
                     CarrierGrid(
-                        selected = if (otherMode) Carriers.OTHER else carrier,
-                        onPick = { picked ->
-                            if (picked == Carriers.OTHER) {
-                                otherMode = true
-                                carrier = ""
+                        selected = if (d.otherMode) Carriers.OTHER else d.carrier,
+                        onPick = { choice ->
+                            if (choice == Carriers.OTHER) {
+                                d.otherMode = true
+                                d.carrier = ""
                             } else {
-                                otherMode = false
-                                carrier = picked
-                                step = 2
+                                d.otherMode = false
+                                d.carrier = choice
+                                d.step = 2
                             }
                         },
                     )
-                    if (otherMode) {
+                    if (d.otherMode) {
                         OutlinedTextField(
-                            value = carrier,
-                            onValueChange = { carrier = it },
+                            value = d.carrier,
+                            onValueChange = { d.carrier = it },
                             label = { Text("Nombre de la compañía") },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
@@ -341,9 +346,18 @@ fun NewClientScreen(host: NewClientHost, initial: NewClientInitial = NewClientIn
                     }
                 }
 
-                else -> {
-                    StepTitle("3 de 3", if (fromContract) "¿Cuándo contrató con su compañía?" else "¿Cuándo puede portarse?")
-                    val options: List<Pair<String, LocalDate>> = if (fromContract) {
+                2 -> {
+                    StepTitle("3 de $totalSteps", if (d.fromContract) "¿Cuándo contrató?" else "¿Cuándo puede portarse?")
+                    Text(
+                        if (d.fromContract) {
+                            "Escoge el día en que firmó su contrato. Le sumamos $months meses para saber cuándo puede portarse."
+                        } else {
+                            "Escoge el día en que queda libre para cambiarse de compañía."
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    val options: List<Pair<String, LocalDate>> = if (d.fromContract) {
                         listOf(
                             "Hoy" to today,
                             "Hace 1 mes" to today.minusMonths(1),
@@ -365,7 +379,7 @@ fun NewClientScreen(host: NewClientHost, initial: NewClientInitial = NewClientIn
                         options.forEach { (label, date) ->
                             FilterChip(
                                 selected = picked == date,
-                                onClick = { pickedEpoch = date.toEpochDay() },
+                                onClick = { d.pickedEpoch = date.toEpochDay() },
                                 label = { Text(label) },
                             )
                         }
@@ -375,54 +389,105 @@ fun NewClientScreen(host: NewClientHost, initial: NewClientInitial = NewClientIn
                             if (picked != null && options.none { it.second == picked }) {
                                 "Fecha elegida: ${Dates.format(picked)}"
                             } else {
-                                "Elegir otra fecha en el calendario"
+                                "Elegir la fecha en el calendario"
                             },
                         )
                     }
-                    TextButton(onClick = { fromContract = !fromContract; pickedEpoch = -1L }) {
-                        Text(if (fromContract) "Mejor, tengo la fecha exacta en que puede portarse" else "No sé la fecha exacta: calcular desde que contrató (+$months meses)")
+                    TextButton(onClick = { d.fromContract = !d.fromContract; d.pickedEpoch = -1L }) {
+                        Text(
+                            if (d.fromContract) {
+                                "Mejor, tengo la fecha exacta en que puede portarse"
+                            } else {
+                                "No sé la fecha exacta: calcular desde que contrató (+$months meses)"
+                            },
+                        )
                     }
-
                     if (due != null) {
-                        Card {
-                            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    CarrierBadge(carrier.ifBlank { "?" }, 48.dp)
-                                    Column {
-                                        Text(name.trim(), style = MaterialTheme.typography.titleMedium)
-                                        Text(
-                                            Contact.pretty(digits, cc) + if (carrier.isNotBlank()) " · $carrier" else "",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                    }
-                                }
-                                Surface(
-                                    color = MaterialTheme.colorScheme.primaryContainer,
-                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                    shape = MaterialTheme.shapes.small,
-                                ) {
-                                    Column(Modifier.fillMaxWidth().padding(12.dp)) {
-                                        Text("Puede portarse el ${Dates.format(due)}", fontWeight = FontWeight.Bold)
-                                        val days = due.toEpochDay() - today.toEpochDay()
-                                        Text(
-                                            if (days < 0) {
-                                                "Ya puede portarse: aparecerá en “Para contactar ahora”."
-                                            } else if (lead > 0 && days > lead) {
-                                                "Te aviso el ${Dates.format(due.minusDays(lead.toLong()))} y el ${Dates.format(due)}."
-                                            } else {
-                                                "Te aviso el ${Dates.format(due)}."
-                                            },
-                                            style = MaterialTheme.typography.bodyMedium,
-                                        )
-                                    }
-                                }
+                        Surface(
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            shape = MaterialTheme.shapes.small,
+                        ) {
+                            Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("Puede portarse el ${Dates.format(due)}", fontWeight = FontWeight.Bold)
+                                Text(alertLine(due, d.leadDays, today), style = MaterialTheme.typography.bodyMedium)
                                 Text("Avisarme antes:", style = MaterialTheme.typography.labelMedium)
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    listOf(1, 3, 7, 14).forEach { d ->
-                                        FilterChip(selected = lead == d, onClick = { lead = d }, label = { Text("$d d") })
+                                    listOf(1, 3, 7, 14).forEach { n ->
+                                        FilterChip(selected = d.leadDays == n, onClick = { d.leadDays = n }, label = { Text("$n d") })
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+
+                else -> {
+                    StepTitle("4 de $totalSteps", "¿Le entregas el chip ahora?")
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                CarrierBadge(d.carrier.ifBlank { "?" }, 48.dp)
+                                Column {
+                                    Text(d.name.trim(), style = MaterialTheme.typography.titleMedium)
+                                    Text(
+                                        Contact.pretty(d.digits, cc) + if (d.carrier.isNotBlank()) " · ${d.carrier}" else "",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                            Surface(
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                shape = MaterialTheme.shapes.small,
+                            ) {
+                                Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                                    if (due != null) {
+                                        Text("Puede portarse el ${Dates.format(due)}", fontWeight = FontWeight.Bold)
+                                        Text(alertLine(due, d.leadDays, today), style = MaterialTheme.typography.bodyMedium)
+                                    } else {
+                                        Text("Sin fecha por ahora", fontWeight = FontWeight.Bold)
+                                        Text("No se programará ninguna alarma.", style = MaterialTheme.typography.bodyMedium)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text("Chip (opcional)", style = MaterialTheme.typography.titleSmall)
+                            Text(
+                                "Escanéalo con la cámara y queda guardado con el cliente. Si no tienes el chip a mano, déjalo para después.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            if (d.chipPath != null) {
+                                PhotoThumb(d.chipPath, 96.dp)
+                            }
+                            Button(onClick = { host.scanChip() }, modifier = Modifier.fillMaxWidth()) {
+                                Text(if (d.chipIccid.isEmpty()) "Leer chip con la cámara" else "Leer otro chip")
+                            }
+                            OutlinedTextField(
+                                value = d.chipIccid,
+                                onValueChange = { d.chipIccid = it.filter { c -> c.isDigit() }.take(20) },
+                                label = { Text("Número del chip (ICCID)") },
+                                supportingText = {
+                                    Text(
+                                        when {
+                                            d.chipIccid.isEmpty() -> "También puedes escribirlo"
+                                            Iccid.isValid(d.chipIccid) -> "Número válido ✓  ${Iccid.pretty(d.chipIccid)}"
+                                            else -> "No pasa la validación: revisa los dígitos"
+                                        },
+                                    )
+                                },
+                                isError = d.chipIccid.isNotEmpty() && !Iccid.isValid(d.chipIccid),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            if (d.chipIccid.isNotEmpty() || d.chipPath != null) {
+                                TextButton(onClick = { d.discardChip() }) { Text("Quitar chip") }
                             }
                         }
                     }
@@ -440,13 +505,32 @@ fun NewClientScreen(host: NewClientHost, initial: NewClientInitial = NewClientIn
             confirmButton = {
                 TextButton(onClick = {
                     state.selectedDateMillis?.let {
-                        pickedEpoch = Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate().toEpochDay()
+                        d.pickedEpoch = Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate().toEpochDay()
                     }
                     showPicker = false
                 }) { Text("OK") }
             },
             dismissButton = { TextButton(onClick = { showPicker = false }) { Text("Cancelar") } },
         ) { DatePicker(state = state) }
+    }
+
+    if (confirmExit) {
+        AlertDialog(
+            onDismissRequest = { confirmExit = false },
+            title = { Text("¿Descartar este cliente?") },
+            text = { Text("Lo que escribiste no se ha guardado.") },
+            confirmButton = { TextButton(onClick = { confirmExit = false; host.exit() }) { Text("Descartar") } },
+            dismissButton = { TextButton(onClick = { confirmExit = false }) { Text("Seguir editando") } },
+        )
+    }
+}
+
+private fun alertLine(due: LocalDate, lead: Int, today: LocalDate): String {
+    val days = due.toEpochDay() - today.toEpochDay()
+    return when {
+        days < 0 -> "Ya puede portarse: aparecerá en “Para contactar ahora”."
+        lead > 0 && days > lead -> "Te aviso el ${Dates.format(due.minusDays(lead.toLong()))} y el ${Dates.format(due)}."
+        else -> "Te aviso el ${Dates.format(due)}."
     }
 }
 

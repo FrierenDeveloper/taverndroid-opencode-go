@@ -66,7 +66,7 @@ private fun computeStats(all: List<Followup>, ym: YearMonth): MonthStats {
     fun dueInMonth(f: Followup) = YearMonth.from(LocalDate.ofEpochDay(f.dueDate)) == ym
 
     val contacted = all.filter { f ->
-        f.status == FollowupStatus.DONE && f.outcome != null && doneDate(f)?.let { YearMonth.from(it) == ym } == true
+        f.status == FollowupStatus.DONE && f.outcome != null && f.outcome != FollowupOutcome.NO_ANSWER && doneDate(f)?.let { YearMonth.from(it) == ym } == true
     }
     val closed = contacted.filter { it.outcome == FollowupOutcome.CLOSED }
     val weeks = (ym.lengthOfMonth() + 6) / 7

@@ -135,7 +135,7 @@ fun PhotoThumb(path: String?, size: Dp, modifier: Modifier = Modifier) {
 
 /** Abre el selector de fotos del sistema (sin permisos), copia la elegida a la carpeta privada y la analiza. */
 @Composable
-private fun rememberGalleryPicker(vm: MainViewModel, replaceScreen: Boolean, clientId: Long?): () -> Unit {
+private fun rememberGalleryPicker(vm: MainViewModel, replaceScreen: Boolean, clientId: Long?, forDraft: Boolean = false): () -> Unit {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
@@ -146,8 +146,13 @@ private fun rememberGalleryPicker(vm: MainViewModel, replaceScreen: Boolean, cli
                 if (file != null && iccid == null) {
                     Toast.makeText(ctx, "No pude leer el número. Puedes escribirlo a mano.", Toast.LENGTH_LONG).show()
                 }
-                val next = Screen.ChipResult(null, file?.path, iccid.orEmpty(), clientId)
-                if (replaceScreen) vm.replaceTop(next) else vm.push(next)
+                if (forDraft) {
+                    vm.newClientDraft.setChip(iccid.orEmpty(), file?.path)
+                    vm.pop()
+                } else {
+                    val next = Screen.ChipResult(null, file?.path, iccid.orEmpty(), clientId)
+                    if (replaceScreen) vm.replaceTop(next) else vm.push(next)
+                }
             }
         }
     }
@@ -273,7 +278,7 @@ private fun ChipsTab(vm: MainViewModel, padding: PaddingValues) {
 // ---------------------------------------------------------------- lector en vivo
 
 @Composable
-fun ScannerScreen(vm: MainViewModel, clientId: Long?) {
+fun ScannerScreen(vm: MainViewModel, clientId: Long?, forDraft: Boolean = false) {
     val ctx = LocalContext.current
     var granted by remember {
         mutableStateOf(ContextCompat.checkSelfPermission(ctx, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
@@ -286,9 +291,19 @@ fun ScannerScreen(vm: MainViewModel, clientId: Long?) {
     var capture by remember { mutableStateOf<ImageCapture?>(null) }
     var message by remember { mutableStateOf("Apunta al código de barras o al número del chip") }
     val handled = remember { AtomicBoolean(false) }
-    val pickFromGallery = rememberGalleryPicker(vm, replaceScreen = true, clientId = clientId)
+    val pickFromGallery = rememberGalleryPicker(vm, replaceScreen = true, clientId = clientId, forDraft = forDraft)
 
     LaunchedEffect(torch, camera) { camera?.cameraControl?.enableTorch(torch) }
+
+    // Entrega la lectura: al asistente de alta (vuelve atrás) o a la pantalla de resultado del chip.
+    fun deliver(iccid: String, path: String?) {
+        if (forDraft) {
+            vm.newClientDraft.setChip(iccid, path)
+            vm.pop()
+        } else {
+            vm.replaceTop(Screen.ChipResult(null, path, iccid, clientId))
+        }
+    }
 
     fun accept(iccid: String) {
         if (!handled.compareAndSet(false, true)) return
@@ -296,7 +311,7 @@ fun ScannerScreen(vm: MainViewModel, clientId: Long?) {
         val file = PhotoStore.newRawFile(ctx)
         val cap = capture
         if (cap == null) {
-            vm.replaceTop(Screen.ChipResult(null, null, iccid, clientId))
+            deliver(iccid, null)
             return
         }
         cap.takePicture(
@@ -306,11 +321,11 @@ fun ScannerScreen(vm: MainViewModel, clientId: Long?) {
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                     // La foto cruda se cifra y se borra al instante.
                     val sealed = PhotoStore.sealRaw(ctx, file)
-                    vm.replaceTop(Screen.ChipResult(null, sealed?.path, iccid, clientId))
+                    deliver(iccid, sealed?.path)
                 }
 
                 override fun onError(exception: ImageCaptureException) {
-                    vm.replaceTop(Screen.ChipResult(null, null, iccid, clientId))
+                    deliver(iccid, null)
                 }
             },
         )
@@ -358,7 +373,7 @@ fun ScannerScreen(vm: MainViewModel, clientId: Long?) {
                         Text("Galería")
                     }
                     FilledTonalButton(
-                        onClick = { vm.replaceTop(Screen.ChipResult(null, null, "", clientId)) },
+                        onClick = { if (forDraft) vm.pop() else vm.replaceTop(Screen.ChipResult(null, null, "", clientId)) },
                         modifier = Modifier.weight(1f),
                         contentPadding = PaddingValues(horizontal = 8.dp),
                     ) { Text("Escribir") }

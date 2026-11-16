@@ -87,7 +87,7 @@ fun AppRoot(vm: MainViewModel) {
                 is Screen.FollowupEdit -> FollowupEditScreen(vm, screen)
                 Screen.Settings -> SettingsScreen(vm)
                 Screen.Import -> ImportScreen(vm)
-                is Screen.Scanner -> ScannerScreen(vm, screen.clientId)
+                is Screen.Scanner -> ScannerScreen(vm, screen.clientId, screen.forDraft)
                 Screen.Photos -> PhotosScreen(vm)
                 is Screen.ChipResult -> ChipResultScreen(vm, screen)
             }
@@ -218,19 +218,30 @@ fun FollowupCard(
     }
 }
 
-/** Pregunta cómo resultó el contacto al marcar un recordatorio como hecho. */
+/** Pregunta cómo resultó el contacto. "Sin respuesta" no cierra el recordatorio: lo reprograma. */
 @Composable
-fun OutcomeDialog(target: Followup?, onPick: (FollowupOutcome) -> Unit, onDismiss: () -> Unit) {
+fun OutcomeDialog(
+    target: Followup?,
+    onPick: (FollowupOutcome) -> Unit,
+    onRetry: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
     if (target == null) return
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("¿Cómo resultó?") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                FollowupOutcome.entries.forEach { o ->
+                listOf(FollowupOutcome.CLOSED, FollowupOutcome.REJECTED).forEach { o ->
                     OutlinedButton(onClick = { onPick(o) }, modifier = Modifier.fillMaxWidth()) {
                         Text("${o.label} · ${o.hint}")
                     }
+                }
+                OutlinedButton(onClick = { onRetry(1) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("No contestó · reintentar mañana")
+                }
+                OutlinedButton(onClick = { onRetry(3) }, modifier = Modifier.fillMaxWidth()) {
+                    Text("No contestó · reintentar en 3 días")
                 }
             }
         },

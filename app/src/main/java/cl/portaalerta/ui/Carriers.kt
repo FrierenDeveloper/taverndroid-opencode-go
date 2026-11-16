@@ -3,11 +3,13 @@ package cl.portaalerta.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -66,12 +68,18 @@ fun CarrierBadge(name: String, size: Dp = 48.dp, modifier: Modifier = Modifier) 
         carrier?.let { ctx.resources.getIdentifier("logo_${it.key}", "drawable", ctx.packageName) } ?: 0
     }
     if (logoRes != 0) {
-        Image(
-            painter = painterResource(logoRes),
-            contentDescription = name,
-            contentScale = ContentScale.Fit,
-            modifier = modifier.size(size).clip(shape),
-        )
+        // Logo oficial (res/drawable-nodpi/logo_<clave>.png): sobre fondo blanco, con margen, sin recortar.
+        Box(
+            modifier.size(size).background(Color.White, shape).border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Image(
+                painter = painterResource(logoRes),
+                contentDescription = name,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize().padding(size * 0.14f).clip(shape),
+            )
+        }
         return
     }
     val bg = carrier?.color ?: MaterialTheme.colorScheme.surfaceVariant

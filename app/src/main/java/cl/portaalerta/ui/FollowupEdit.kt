@@ -80,14 +80,25 @@ private fun FollowupForm(vm: MainViewModel, initial: Followup?, clientId: Long?,
 
     var selectedClient by remember { mutableStateOf(initial?.clientId ?: clientId) }
     var type by remember { mutableStateOf(initial?.type ?: startType) }
-    var base by remember { mutableStateOf(initial?.let { LocalDate.ofEpochDay(it.baseDate) } ?: LocalDate.now()) }
+    // Portabilidad: la fecha elegida es el DÍA EN QUE PUEDE PORTARSE (no se le suman meses).
+    // Solo si no se sabe, se puede calcular desde la fecha de contrato (+ plazo).
+    // Seguro: la fecha elegida es la de compra y el aviso llega al cumplirse el plazo.
+    var fromStart by remember { mutableStateOf(false) }
+    var picked by remember {
+        mutableStateOf(
+            initial?.let { LocalDate.ofEpochDay(if (it.type == FollowupType.PORTABILITY) it.dueDate else it.baseDate) }
+                ?: LocalDate.now(),
+        )
+    }
     var months by remember { mutableIntStateOf(initial?.months ?: settings.months(startType)) }
     var lead by remember { mutableIntStateOf(initial?.leadDays ?: settings.leadDays(startType)) }
     var detail by remember { mutableStateOf(initial?.detail.orEmpty()) }
     var showPicker by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
 
-    val due = Dates.dueFor(base, months)
+    val exactMode = type == FollowupType.PORTABILITY && !fromStart
+    val due = if (exactMode) picked else Dates.dueFor(picked, months)
+    val base = if (exactMode) picked.minusMonths(months.toLong()) else picked
     val alertDay = due.minusDays(lead.toLong())
     val clientName = clients.firstOrNull { it.id == selectedClient }?.name
 
@@ -137,7 +148,9 @@ private fun FollowupForm(vm: MainViewModel, initial: Followup?, clientId: Long?,
                     FilterChip(
                         selected = type == t,
                         onClick = {
+                            if (t != type) picked = LocalDate.now()
                             type = t
+                            fromStart = false
                             if (initial == null) {
                                 months = settings.months(t)
                                 lead = settings.leadDays(t)
@@ -151,11 +164,22 @@ private fun FollowupForm(vm: MainViewModel, initial: Followup?, clientId: Long?,
             OutlinedButton(onClick = { showPicker = true }, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Default.DateRange, contentDescription = null)
                 Text(
-                    if (type == FollowupType.PORTABILITY) "  Fecha base: ${Dates.format(base)}"
-                    else "  Fecha de compra / inicio: ${Dates.format(base)}",
+                    when {
+                        exactMode -> "  Puede portarse el: ${Dates.format(picked)}"
+                        type == FollowupType.PORTABILITY -> "  Contrató el: ${Dates.format(picked)}"
+                        else -> "  Fecha de compra / inicio: ${Dates.format(picked)}"
+                    },
                 )
             }
-            Stepper("Plazo", months, 1..36, if (months == 1) "mes" else "meses") { months = it }
+            if (type == FollowupType.PORTABILITY) {
+                TextButton(onClick = { fromStart = !fromStart }) {
+                    Text(
+                        if (fromStart) "Mejor, tengo la fecha exacta en que puede portarse"
+                        else "No sé la fecha exacta: calcular desde que contrató (+$months meses)",
+                    )
+                }
+            }
+            if (!exactMode) Stepper("Plazo", months, 1..36, if (months == 1) "mes" else "meses") { months = it }
             Stepper("Avisar con anticipación", lead, 0..60, if (lead == 1) "día" else "días") { lead = it }
 
             OutlinedTextField(
@@ -166,7 +190,10 @@ private fun FollowupForm(vm: MainViewModel, initial: Followup?, clientId: Long?,
 
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Vence: ${Dates.format(due)}", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        if (type == FollowupType.PORTABILITY) "Puede portarse el ${Dates.format(due)}" else "Vence: ${Dates.format(due)}",
+                        style = MaterialTheme.typography.titleMedium,
+                    )
                     Text(
                         if (lead > 0) "Alarma de aviso: ${Dates.format(alertDay)} a las ${"%02d:00".format(java.util.Locale.ROOT, settings.notifyHour)}"
                         else "Alarma el día del vencimiento",
@@ -203,14 +230,14 @@ private fun FollowupForm(vm: MainViewModel, initial: Followup?, clientId: Long?,
 
     if (showPicker) {
         val state = rememberDatePickerState(
-            initialSelectedDateMillis = base.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
+            initialSelectedDateMillis = picked.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli(),
         )
         DatePickerDialog(
             onDismissRequest = { showPicker = false },
             confirmButton = {
                 TextButton(onClick = {
                     state.selectedDateMillis?.let {
-                        base = Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()
+                        picked = Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()
                     }
                     showPicker = false
                 }) { Text("OK") }

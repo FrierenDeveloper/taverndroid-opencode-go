@@ -41,7 +41,7 @@ sealed interface Screen {
     data class ClientEdit(val id: Long?) : Screen
     data object NewClient : Screen
     data object Settings : Screen
-    data class Scanner(val clientId: Long?) : Screen
+    data class Scanner(val clientId: Long?, val forDraft: Boolean = false) : Screen
     data object Photos : Screen
     data class ChipResult(val scanId: Long?, val tempPath: String?, val iccid: String, val clientId: Long?) : Screen
     data object Import : Screen
@@ -67,6 +67,29 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var clientQuery by mutableStateOf("")
 
     var purgePrompt by mutableStateOf<PurgePrompt?>(null)
+
+    // ---- alta de cliente en curso (sobrevive a la pantalla del lector de chips) ----
+    var newClientDraft by mutableStateOf(NewClientDraft())
+
+    private fun freshDraft() = NewClientDraft(leadDays = settings.leadDays(FollowupType.PORTABILITY))
+
+    fun startNewClient() {
+        newClientDraft.discardChip()
+        newClientDraft = freshDraft()
+        push(Screen.NewClient)
+    }
+
+    fun discardNewClient() {
+        newClientDraft.discardChip()
+        newClientDraft = freshDraft()
+        pop()
+    }
+
+    /** El cliente ya se guardó: la foto del chip (si hay) pasa a su lugar definitivo en saveScan. */
+    fun finishNewClient(clientId: Long) {
+        newClientDraft = freshDraft()
+        replaceTop(Screen.ClientDetail(clientId))
+    }
 
     // ---- navegación mínima (pila de pantallas) ----
     val stack = mutableStateListOf<Screen>(Screen.Home)
@@ -217,6 +240,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val n = dao.scansNow(f.clientId).count { it.photoPath != null }
                 if (n > 0) dao.client(f.clientId)?.let { purgePrompt = PurgePrompt(it, n) }
             }
+        }
+    }
+
+    /** "Sin respuesta": el recordatorio NO se cierra, se reprograma para volver a intentar. */
+    fun retryLater(f: Followup, days: Int) {
+        viewModelScope.launch {
+            val retry = f.copy(
+                dueDate = LocalDate.now().plusDays(days.toLong()).toEpochDay(),
+                leadDays = 0,
+                status = FollowupStatus.OPEN,
+            )
+            dao.updateFollowup(retry)
+            Scheduler.schedule(ctx, retry)
         }
     }
 

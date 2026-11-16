@@ -144,7 +144,7 @@ fun HomeScreen(vm: MainViewModel) {
         floatingActionButton = {
             when (tab) {
                 0, 1 -> ExtendedFloatingActionButton(
-                    onClick = { vm.push(Screen.NewClient) },
+                    onClick = { vm.startNewClient() },
                     icon = { Icon(Icons.Default.Add, contentDescription = null) },
                     text = { Text("Nuevo cliente") },
                     containerColor = MaterialTheme.colorScheme.primary,
@@ -209,6 +209,10 @@ private fun AgendaTab(vm: MainViewModel, padding: PaddingValues) {
         target = doneTarget,
         onPick = { outcome ->
             doneTarget?.let { vm.markDone(it, outcome) }
+            doneTarget = null
+        },
+        onRetry = { days ->
+            doneTarget?.let { vm.retryLater(it, days) }
             doneTarget = null
         },
         onDismiss = { doneTarget = null },
@@ -317,6 +321,10 @@ private fun InsuranceTab(vm: MainViewModel, padding: PaddingValues) {
         target = doneTarget,
         onPick = { outcome ->
             doneTarget?.let { vm.markDone(it, outcome) }
+            doneTarget = null
+        },
+        onRetry = { days ->
+            doneTarget?.let { vm.retryLater(it, days) }
             doneTarget = null
         },
         onDismiss = { doneTarget = null },
